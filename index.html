@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Map & Crew Scheduler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Leaflet Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- SheetJS Xuất Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #e2e8f0;
+        }
+
+        .drawer-enter-active,
+        .drawer-leave-active {
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .drawer-enter-from,
+        .drawer-leave-to {
+            transform: translateX(100%);
+        }
+
+        .fade-enter-active,
+        .fade-leave-active {
+            transition: opacity 0.2s ease;
+        }
+
+        .fade-enter-from,
+        .fade-leave-to {
+            opacity: 0;
+        }
+
+        .leaflet-container {
+            font-family: 'Inter', sans-serif;
+            cursor: crosshair;
+        }
+
+        /* Custom Map Pin Label */
+        .custom-pin {
+            background: #0f172a;
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 99px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            border: 2px solid #fff;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .custom-pin-owner {
+            background: #4f46e5;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app" class="relative w-screen h-screen overflow-hidden select-none">
+
+        <!-- ========================================================= -->
+        <!-- 1. BẢN ĐỒ TOÀN MÀN HÌNH (100% VIEWPORT) -->
+        <!-- ========================================================= -->
+        <div id="map" class="w-full h-full z-10"></div>
+
+        <!-- ========================================================= -->
+        <!-- 2. FLOATING TOP BAR (THANH ĐIỀU KHIỂN NỔI GỌN NHẸ) -->
+        <!-- ========================================================= -->
+        <div
+            class="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+
+            <!-- Cụm Trái: Tìm địa điểm + Chọn Ngày/Tháng -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+
+                <!-- Search Box -->
+                <div class="relative w-64 sm:w-80">
+                    <div
+                        class="bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-lg rounded-2xl px-3 py-2 flex items-center gap-2">
+                        <span class="text-slate-400 text-xs">🔍</span>
+                        <input v-model="searchQuery" @keyup.enter="searchPlace"
+                            placeholder="Tìm địa điểm (VD: Trống Đồng)..."
+                            class="w-full bg-transparent text-xs font-medium text-slate-800 focus:outline-none">
+                        <button v-if="searchQuery" @click="searchQuery = ''; searchResults = []"
+                            class="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+                    </div>
+
+                    <!-- Dropdown gợi ý địa điểm -->
+                    <div v-if="searchResults.length > 0"
+                        class="absolute left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden max-h-60 overflow-y-auto divide-y divide-slate-100">
+                        <div v-for="(p, idx) in searchResults" :key="idx" @click="pickSearchResult(p)"
+                            class="p-2.5 hover:bg-indigo-50/70 cursor-pointer transition text-xs">
+                            <div class="font-bold text-slate-900">📍 {{ p.mainName }}</div>
+                            <div class="text-[11px] text-slate-500 truncate">{{ p.subAddress }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chọn Ngày hiển thị trên Map (Hoặc bật xem cả tháng) -->
+                <div
+                    class="bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-lg rounded-2xl p-1 flex items-center gap-1">
+                    <input type="date" v-model="selectedDate"
+                        class="bg-transparent px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer">
+                    <button @click="viewAllMonth = !viewAllMonth"
+                        :class="viewAllMonth ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+                        class="px-2.5 py-1 rounded-xl text-[11px] font-semibold transition">
+                        {{ viewAllMonth ? 'Đang xem cả tháng' : 'Xem theo ngày' }}
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- Cụm Phải: Xuất Excel Tháng + Profile & Đổi User -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+
+                <!-- Xuất Excel theo Tháng -->
+                <div
+                    class="bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-lg rounded-2xl p-1 flex items-center gap-1">
+                    <input type="month" v-model="exportMonth"
+                        class="bg-transparent pl-2.5 pr-1 py-1 text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer">
+                    <button @click="exportMonthlyExcel"
+                        class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition flex items-center gap-1">
+                        <span>📥 Excel</span>
+                    </button>
+                </div>
+
+                <!-- Nút mở Profile cài Dịch vụ & Lịch bận + Đổi tài khoản -->
+                <div
+                    class="bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-lg rounded-2xl p-1 flex items-center gap-1">
+                    <select v-model="selectedUserId" @change="closeDrawer"
+                        class="bg-transparent pl-2.5 pr-1 py-1 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer">
+                        <option v-for="m in members" :key="m.id" :value="m.id">👤 {{ m.name }}</option>
+                    </select>
+                    <button @click="showProfileModal = true"
+                        class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-xl transition"
+                        title="Cài đặt Dịch vụ & Lịch bận cố định">
+                        ⚙️ Profile
+                    </button>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- 3. SIDE WINDOW (DÙNG CHUNG TẠO MỚI & EDIT - TITLE LÀ ĐỊA ĐIỂM) -->
+        <!-- ========================================================= -->
+        <transition name="drawer">
+            <div v-if="drawerOpen"
+                class="absolute top-0 right-0 h-full w-full sm:w-[400px] bg-white border-l border-slate-200 shadow-2xl z-30 flex flex-col">
+
+                <!-- HEADER: TITLE CHÍNH LÀ TÊN ĐỊA ĐIỂM BẮT TỪ MAP -->
+                <div class="p-4 border-b border-slate-100 bg-slate-50/70 space-y-1.5">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-rose-500 text-sm">📍</span>
+                                <input v-model="form.location" placeholder="Tên địa điểm..."
+                                    class="w-full bg-transparent font-bold text-base text-slate-900 focus:bg-white focus:px-2 focus:py-0.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30">
+                            </div>
+                            <input v-model="form.subAddress" placeholder="Địa chỉ chi tiết..."
+                                class="w-full bg-transparent text-xs text-slate-400 pl-5 focus:outline-none">
+                        </div>
+                        <button @click="closeDrawer"
+                            class="w-7 h-7 rounded-full bg-white border border-slate-200 hover:bg-slate-100 flex items-center justify-center text-slate-500 text-xs shrink-0">
+                            ✕
+                        </button>
+                    </div>
+
+                    <!-- Chip chọn nhanh nếu quanh chỗ chấm có nhiều sảnh/tòa nhà -->
+                    <div v-if="nearbyPOIs.length > 1" class="flex flex-wrap gap-1 pl-5 pt-0.5">
+                        <button v-for="(poi, idx) in nearbyPOIs" :key="idx" type="button" @click="form.location = poi"
+                            class="text-[11px] bg-white hover:bg-indigo-600 hover:text-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-md transition">
+                            {{ poi }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- BODY: 5 BƯỚC PHẲNG, SẠCH, KHÔNG GHI CHÚ RƯỜM RÀ -->
+                <div class="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+
+                    <!-- 1. NGÀY & GIỜ -->
+                    <div class="grid grid-cols-12 gap-2">
+                        <div class="col-span-5">
+                            <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Ngày</label>
+                            <input type="date" v-model="form.date"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-semibold text-slate-800 focus:outline-none">
+                        </div>
+                        <div class="col-span-7">
+                            <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Giờ
+                                chạy</label>
+                            <div class="flex items-center gap-1">
+                                <input type="time" v-model="form.startTime"
+                                    class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 font-semibold text-center focus:outline-none">
+                                <span class="text-slate-300">-</span>
+                                <input type="time" v-model="form.endTime"
+                                    class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 font-semibold text-center focus:outline-none">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. DỊCH VỤ -->
+                    <div>
+                        <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1.5">Dịch vụ</label>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button v-for="sv in serviceCatalog" :key="sv.code" type="button"
+                                @click="changeService(sv.code)"
+                                class="px-3 py-1.5 rounded-xl border font-semibold flex items-center gap-1 transition"
+                                :class="form.serviceCode === sv.code ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'">
+                                <span>{{ sv.icon }}</span>
+                                <span>{{ sv.name }}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 3. CHỌN THỢ (Tự động lọc theo Dịch vụ + Check trùng Job + Check lịch bận cố định) -->
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="text-[11px] font-semibold text-slate-400 uppercase">Thợ chạy ({{
+                                getServiceLabel(form.serviceCode) }})</label>
+                            <div class="flex items-center gap-2 text-[11px]">
+                                <span class="text-emerald-600 font-medium">● Rảnh</span>
+                                <span class="text-rose-500 font-medium">● Bận</span>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap gap-1.5">
+                            <button v-for="m in filteredCandidates" :key="m.id" type="button" @click="toggleCrew(m.id)"
+                                class="px-3 py-1.5 rounded-xl border font-semibold flex items-center gap-1.5 transition"
+                                :class="[
+                  isSelected(m.id) ? 'bg-slate-900 text-white border-slate-900' : 
+                  m.busyReason ? 'bg-slate-50 border-slate-200 text-slate-400' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                ]" :title="m.busyReason || 'Đang rảnh'">
+                                <span class="w-2 h-2 rounded-full"
+                                    :class="m.busyReason ? 'bg-rose-500' : 'bg-emerald-500'"></span>
+                                <span>{{ m.name }}</span>
+                                <span v-if="m.busyReason && !isSelected(m.id)"
+                                    class="text-[10px] text-rose-400 font-normal">({{ m.busyReason }})</span>
+                                <span v-if="isSelected(m.id)" class="text-indigo-300">✓</span>
+                            </button>
+                        </div>
+
+                        <!-- Ô thêm thợ ngoài -->
+                        <input v-model="form.externalText" placeholder="+ Thợ ngoài (VD: Nam chụp phụ)..."
+                            class="mt-2 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none">
+                    </div>
+
+                    <!-- 4. CHỦ JOB & GHI CHÚ -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Chủ Job</label>
+                            <select v-model="form.ownerId"
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-semibold text-slate-800 focus:outline-none">
+                                <option :value="null">Khách ngoài</option>
+                                <option v-for="m in members" :key="m.id" :value="m.id">{{ m.name }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-400 uppercase mb-1">Ghi chú</label>
+                            <input v-model="form.note" placeholder="Mang cánh trắng..."
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <!-- 5. CÁT-XÊ & THANH TOÁN (MẶC ĐỊNH ẨN SỐ TIỀN + PHÂN QUYỀN CHỦ/THỢ) -->
+                    <div class="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-bold text-slate-500 uppercase">💰 Cát-xê & Thanh toán</span>
+                            <button type="button" @click="revealMoney = !revealMoney"
+                                class="text-[11px] font-semibold px-2 py-0.5 rounded-md border bg-white text-slate-600 hover:bg-slate-100">
+                                {{ revealMoney ? '🙈 Ẩn tiền' : '👁️ Hiện tiền' }}
+                            </button>
+                        </div>
+
+                        <!-- Khi đang ở chế độ ẨN TIỀN -->
+                        <div v-if="!revealMoney"
+                            class="py-2 text-center text-slate-400 font-mono text-xs tracking-widest">
+                            •••••••• đ (Bấm "Hiện tiền" để xem)
+                        </div>
+
+                        <!-- Khi bấm HIỆN TIỀN: Phân quyền rõ Chủ Job vs Thợ chạy -->
+                        <div v-else class="space-y-2">
+
+                            <!-- Chỉ Chủ Job mới thấy ô Tổng thu khách & Danh sách trả từng thợ -->
+                            <template v-if="form.ownerId === currentUser.id">
+                                <div
+                                    class="flex items-center justify-between bg-amber-50/80 border border-amber-200/80 px-3 py-2 rounded-xl">
+                                    <span class="font-semibold text-amber-900">Tổng thu khách:</span>
+                                    <input type="number" v-model.number="form.clientTotal" step="100000"
+                                        placeholder="Chưa nhập..."
+                                        class="bg-white border border-amber-300 rounded-lg px-2 py-1 font-bold text-slate-900 w-28 text-right focus:outline-none">
+                                </div>
+
+                                <div v-for="c in form.crew" :key="c.userId"
+                                    class="flex items-center justify-between bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+                                    <span class="font-semibold text-slate-700">Trả {{ getMemberName(c.userId) }}:</span>
+                                    <div class="flex items-center gap-1.5">
+                                        <input type="number" v-model.number="c.pay" step="100000"
+                                            class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-bold text-emerald-700 w-24 text-right focus:outline-none">
+                                        <button type="button" @click="c.paid = !c.paid"
+                                            class="px-2 py-1 rounded-lg font-semibold text-[11px]"
+                                            :class="c.paid ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'">
+                                            {{ c.paid ? '✓ Đã TT' : 'Chờ TT' }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- Nếu không phải Chủ Job (hoặc Khách ngoài): Chỉ thấy đúng dòng Cát-xê của chính mình -->
+                            <template v-else>
+                                <div v-for="c in myCrewInForm" :key="c.userId"
+                                    class="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-slate-200">
+                                    <span class="font-semibold text-slate-700">Cát-xê của {{ currentUser.name }}:</span>
+                                    <div class="flex items-center gap-1.5">
+                                        <input type="number" v-model.number="c.pay" step="100000"
+                                            class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-bold text-emerald-700 w-24 text-right focus:outline-none">
+                                        <button type="button" @click="c.paid = !c.paid"
+                                            class="px-2 py-1 rounded-lg font-semibold text-[11px]"
+                                            :class="c.paid ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'">
+                                            {{ c.paid ? '✓ Đã TT' : 'Chờ TT' }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- FOOTER -->
+                <div class="p-4 border-t border-slate-100 bg-white flex items-center justify-between">
+                    <button v-if="drawerMode === 'edit'" @click="deleteJob(form.id)" type="button"
+                        class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold">
+                        🗑️ Xoá
+                    </button>
+                    <div v-else></div>
+
+                    <div class="flex items-center gap-2">
+                        <button @click="closeDrawer" type="button"
+                            class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold">
+                            Đóng
+                        </button>
+                        <button @click="saveJob" type="button"
+                            class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm">
+                            Lưu Job
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </transition>
+
+        <!-- ========================================================= -->
+        <!-- 4. MODAL PROFILE: CÀI DỊCH VỤ & LỊCH BẬN CỐ ĐỊNH (IT T2-T6) -->
+        <!-- ========================================================= -->
+        <transition name="fade">
+            <div v-if="showProfileModal"
+                class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4 text-xs">
+
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div>
+                            <h3 class="font-bold text-base text-slate-900">⚙️ Cài đặt của {{ currentUser.name }}</h3>
+                            <p class="text-slate-400">Thiết lập dịch vụ cung cấp & lịch bận cố định</p>
+                        </div>
+                        <button @click="showProfileModal = false"
+                            class="w-7 h-7 rounded-full bg-slate-100 text-slate-500">✕</button>
+                    </div>
+
+                    <!-- 1. Dịch vụ của tôi -->
+                    <div class="space-y-2">
+                        <label class="block font-bold text-slate-700 uppercase text-[11px]">1. Dịch vụ bạn cung
+                            cấp</label>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button v-for="sv in serviceCatalog" :key="sv.code" type="button"
+                                @click="toggleMyService(sv.code)"
+                                class="px-3 py-1.5 rounded-xl border font-semibold flex items-center gap-1.5 transition"
+                                :class="currentUser.services.includes(sv.code) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 border-slate-200 text-slate-600'">
+                                <span>{{ sv.icon }} {{ sv.name }}</span>
+                                <span v-if="currentUser.services.includes(sv.code)">✓</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2. Lịch bận cố định hàng tuần (Đi làm văn phòng T2 - T6) -->
+                    <div class="space-y-2 pt-2 border-t border-slate-100">
+                        <label class="block font-bold text-slate-700 uppercase text-[11px]">2. Lịch bận cố định (Đi làm
+                            hành chính)</label>
+                        <label
+                            class="flex items-center gap-2 cursor-pointer bg-slate-50 p-3 rounded-xl border border-slate-200">
+                            <input type="checkbox" v-model="currentUser.officeBusy.enabled"
+                                class="rounded text-indigo-600">
+                            <span class="font-semibold text-slate-800">Thứ 2 ➔ Thứ 6 bận đi làm văn phòng</span>
+                        </label>
+                        <div v-if="currentUser.officeBusy.enabled" class="flex items-center gap-2 pl-2">
+                            <span class="text-slate-500">Khung giờ bận:</span>
+                            <input type="time" v-model="currentUser.officeBusy.start"
+                                class="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 font-semibold">
+                            <span>đến</span>
+                            <input type="time" v-model="currentUser.officeBusy.end"
+                                class="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 font-semibold">
+                        </div>
+                    </div>
+
+                    <!-- 3. Ngày bận đột xuất -->
+                    <div class="space-y-2 pt-2 border-t border-slate-100">
+                        <label class="block font-bold text-slate-700 uppercase text-[11px]">3. Báo bận ngày cụ thể (Nghỉ
+                            riêng)</label>
+                        <div class="flex items-center gap-2">
+                            <input type="date" v-model="newBusyDate"
+                                class="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-semibold">
+                            <button @click="addCustomBusyDate" type="button"
+                                class="bg-slate-900 text-white font-semibold px-3 py-1.5 rounded-xl">
+                                + Thêm ngày bận
+                            </button>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5 pt-1">
+                            <span v-for="(d, idx) in currentUser.customBusyDates" :key="idx"
+                                class="inline-flex items-center gap-1.5 bg-rose-50 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-lg font-medium">
+                                <span>📅 {{ formatDateVN(d) }}</span>
+                                <button @click="currentUser.customBusyDates.splice(idx, 1)"
+                                    class="text-rose-400 hover:text-rose-700">✕</button>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end pt-3 border-t border-slate-100">
+                        <button @click="showProfileModal = false"
+                            class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl">
+                            Xong
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+        </transition>
+
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, watch } = Vue;
+
+        createApp({
+            setup() {
+                const selectedDate = ref('2026-10-18'); // Chủ nhật
+                const viewAllMonth = ref(true);         // Mặc định hiện các ghim trong tháng của mình
+                const exportMonth = ref('2026-10');
+                const selectedUserId = ref(1);          // Mặc định là Hưng
+
+                const drawerOpen = ref(false);
+                const drawerMode = ref('create');
+                const revealMoney = ref(false);         // Mặc định ẩn tiền
+                const showProfileModal = ref(false);
+                const newBusyDate = ref('2026-10-25');
+                const nearbyPOIs = ref([]);
+
+                const searchQuery = ref('');
+                const searchResults = ref([]);
+
+                let map = null;
+                let markers = [];
+                let draftMarker = null;
+
+                const serviceCatalog = [
+                    { code: 'BUTTERFLY', name: 'Bướm', icon: '🦋' },
+                    { code: 'FPV', name: 'FPV', icon: '🚁' },
+                    { code: 'FLYCAM', name: 'Flycam', icon: '✈️' },
+                    { code: 'CAMERA', name: 'Quay', icon: '🎥' },
+                    { code: 'PHOTO', name: 'Chụp', icon: '📸' }
+                ];
+
+                // Danh sách 8 anh em kèm cấu hình Dịch vụ & Lịch bận cố định (Profile)
+                const members = ref([
+                    { id: 1, name: 'Hưng', services: ['BUTTERFLY', 'FPV', 'FLYCAM'], officeBusy: { enabled: true, start: '08:00', end: '17:30' }, customBusyDates: [] },
+                    { id: 4, name: 'Hải', services: ['CAMERA', 'FLYCAM'], officeBusy: { enabled: false, start: '08:00', end: '17:30' }, customBusyDates: [] },
+                    { id: 2, name: 'Minh', services: ['BUTTERFLY', 'FLYCAM'], officeBusy: { enabled: false, start: '08:00', end: '17:30' }, customBusyDates: [] },
+                    { id: 3, name: 'Tuấn', services: ['PHOTO'], officeBusy: { enabled: false, start: '08:00', end: '17:30' }, customBusyDates: [] },
+                    { id: 5, name: 'Long', services: ['CAMERA'], officeBusy: { enabled: true, start: '08:30', end: '17:30' }, customBusyDates: [] },
+                    { id: 6, name: 'Khánh', services: ['PHOTO'], officeBusy: { enabled: false, start: '08:00', end: '17:30' }, customBusyDates: [] },
+                    { id: 7, name: 'Việt', services: ['BUTTERFLY', 'FPV'], officeBusy: { enabled: false, start: '08:00', end: '17:30' }, customBusyDates: ['2026-10-18'] },
+                    { id: 8, name: 'Tùng', services: ['CAMERA', 'PHOTO'], officeBusy: { enabled: false, start: '08:00', end: '17:30' }, customBusyDates: [] }
+                ]);
+
+                // Dữ liệu Job mẫu trong tháng 10/2026
+                const jobs = ref([
+                    {
+                        id: 101,
+                        date: '2026-10-18',
+                        startTime: '08:00',
+                        endTime: '11:30',
+                        serviceCode: 'BUTTERFLY',
+                        location: 'Trống Đồng Palace Cảnh Hồ',
+                        subAddress: '173B Trường Chinh, Thanh Xuân',
+                        lat: 20.9982,
+                        lng: 105.8265,
+                        ownerId: 4, // Hải là Chủ Job, gọi Hưng & Minh bay 2 Bướm
+                        clientTotal: 6000000,
+                        crew: [
+                            { userId: 1, pay: 2000000, paid: false },
+                            { userId: 2, pay: 2000000, paid: true }
+                        ],
+                        externals: [],
+                        note: '2 Bướm trắng sảnh tầng 2'
+                    },
+                    {
+                        id: 102,
+                        date: '2026-10-18',
+                        startTime: '14:00',
+                        endTime: '17:30',
+                        serviceCode: 'FPV',
+                        location: 'JW Marriott Hotel Hanoi',
+                        subAddress: 'Số 8 Đỗ Đức Dục, Nam Từ Liêm',
+                        lat: 21.0044,
+                        lng: 105.7815,
+                        ownerId: 4, // Hải nhắn riêng, Hưng tạo lịch
+                        clientTotal: null,
+                        crew: [
+                            { userId: 1, pay: 2000000, paid: true }
+                        ],
+                        externals: [],
+                        note: 'Bay FPV trao nhẫn'
+                    },
+                    {
+                        id: 103,
+                        date: '2026-10-18',
+                        startTime: '09:00',
+                        endTime: '12:00',
+                        serviceCode: 'PHOTO',
+                        location: 'Sheraton West Hanoi',
+                        subAddress: 'Tây Hồ, Hà Nội',
+                        lat: 21.0585,
+                        lng: 105.8312,
+                        ownerId: 3, // Job riêng của Tuấn (Hưng hoàn toàn KHÔNG thấy trên Map)
+                        clientTotal: 3000000,
+                        crew: [{ userId: 3, pay: 3000000, paid: false }],
+                        externals: [],
+                        note: ''
+                    }
+                ]);
+
+                const form = ref({
+                    id: null,
+                    date: '2026-10-18',
+                    startTime: '09:00',
+                    endTime: '12:00',
+                    location: '',
+                    subAddress: '',
+                    lat: 21.003,
+                    lng: 105.805,
+                    serviceCode: 'BUTTERFLY',
+                    ownerId: 1,
+                    clientTotal: null,
+                    crew: [],
+                    externalText: '',
+                    note: ''
+                });
+
+                const currentUser = computed(() => members.value.find(m => m.id === selectedUserId.value) || members.value[0]);
+
+                // PHÂN QUYỀN: Chỉ lấy các Job mà mình tham gia chạy hoặc mình là Chủ Job
+                const myVisibleJobs = computed(() => {
+                    return jobs.value.filter(j => {
+                        const isMine = j.ownerId === currentUser.value.id || j.crew.some(c => c.userId === currentUser.value.id);
+                        if (!isMine) return false;
+                        if (viewAllMonth.value) {
+                            return j.date.startsWith(exportMonth.value);
+                        }
+                        return j.date === selectedDate.value;
+                    });
+                });
+
+                const isTimeOverlap = (s1, e1, s2, e2) => !(e1 <= s2 || s1 >= e2);
+
+                // Kiểm tra 1 thành viên có bị bận vào Ngày + Giờ đang chọn trong Form hay không
+                // (Bao gồm: 1. Lịch nghỉ riêng, 2. Giờ hành chính T2-T6, 3. Đang kẹt chạy Job khác)
+                const getMemberBusyReason = (member, dateStr, startStr, endStr, ignoreJobId) => {
+                    if (member.customBusyDates.includes(dateStr)) return 'Báo nghỉ';
+
+                    if (member.officeBusy && member.officeBusy.enabled) {
+                        const dayOfWeek = new Date(dateStr).getDay(); // 1=T2 ... 5=T6
+                        if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+                            if (isTimeOverlap(startStr, endStr, member.officeBusy.start, member.officeBusy.end)) {
+                                return 'Bận giờ HC';
+                            }
+                        }
+                    }
+
+                    const hasJobConflict = jobs.value.some(j =>
+                        j.id !== ignoreJobId &&
+                        j.date === dateStr &&
+                        j.crew.some(c => c.userId === member.id) &&
+                        isTimeOverlap(startStr, endStr, j.startTime, j.endTime)
+                    );
+                    if (hasJobConflict) return 'Trùng show';
+
+                    return null;
+                };
+
+                // Lọc ứng viên theo Dịch vụ + Tính trạng thái Rảnh/Bận
+                const filteredCandidates = computed(() => {
+                    return members.value
+                        .filter(m => m.services.includes(form.value.serviceCode))
+                        .map(m => ({
+                            ...m,
+                            busyReason: getMemberBusyReason(m, form.value.date, form.value.startTime, form.value.endTime, form.value.id)
+                        }));
+                });
+
+                const myCrewInForm = computed(() => form.value.crew.filter(c => c.userId === currentUser.value.id));
+
+                const getMemberName = (id) => members.value.find(m => m.id === id)?.name || '';
+                const getServiceLabel = (code) => {
+                    const s = serviceCatalog.find(x => x.code === code);
+                    return s ? `${s.icon} ${s.name}` : code;
+                };
+
+                // Tự động lấy tên Tòa nhà / Sảnh sự kiện khi chấm trên Map
+                const resolvePlaceName = async (lat, lng) => {
+                    nearbyPOIs.value = [];
+                    try {
+                        const q = `[out:json][timeout:5];(node(around:85,${lat},${lng})["name"];way(around:85,${lat},${lng})["name"];);out tags center 6;`;
+                        const [overpass, photon] = await Promise.all([
+                            fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`).then(r => r.json()).catch(() => null),
+                            fetch(`https://photon.komoot.io/reverse?lon=${lng}&lat=${lat}`).then(r => r.json()).catch(() => null)
+                        ]);
+
+                        let pois = [];
+                        if (overpass && overpass.elements) {
+                            pois = [...new Set(overpass.elements.filter(e => e.tags?.name && !e.tags?.highway).map(e => e.tags.name))];
+                        }
+
+                        let street = '';
+                        let photonName = '';
+                        if (photon && photon.features?.length > 0) {
+                            const p = photon.features[0].properties;
+                            photonName = p.name || '';
+                            street = [p.street, p.district || p.city].filter(Boolean).join(', ');
+                        }
+
+                        if (pois.length > 0) {
+                            form.value.location = pois[0];
+                            nearbyPOIs.value = pois.slice(0, 4);
+                            form.value.subAddress = street || 'Hà Nội';
+                        } else if (photonName) {
+                            form.value.location = photonName;
+                            form.value.subAddress = street;
+                        } else {
+                            form.value.location = street || 'Điểm hẹn trên bản đồ';
+                            form.value.subAddress = 'Hà Nội';
+                        }
+                    } catch {
+                        form.value.location = 'Địa điểm sự kiện';
+                    }
+                };
+
+                // CLICK BẢN ĐỒ -> MỞ SIDE WINDOW TẠO JOB
+                const onMapClick = (e) => {
+                    const { lat, lng } = e.latlng;
+                    searchResults.value = [];
+                    drawerMode.value = 'create';
+                    revealMoney.value = false;
+
+                    if (draftMarker) map.removeLayer(draftMarker);
+                    draftMarker = L.marker([lat, lng]).addTo(map);
+
+                    const defaultService = currentUser.value.services[0] || 'BUTTERFLY';
+                    form.value = {
+                        id: null,
+                        date: selectedDate.value,
+                        startTime: '08:00',
+                        endTime: '11:30',
+                        location: 'Đang lấy tên địa điểm...',
+                        subAddress: '',
+                        lat,
+                        lng,
+                        serviceCode: defaultService,
+                        ownerId: currentUser.value.id,
+                        clientTotal: null,
+                        crew: [{ userId: currentUser.value.id, pay: 2000000, paid: false }],
+                        externalText: '',
+                        note: ''
+                    };
+                    drawerOpen.value = true;
+                    resolvePlaceName(lat, lng);
+                };
+
+                // CLICK GHIM TRÊN MAP -> MỞ SIDE WINDOW EDIT JOB
+                const openEditDrawer = (job) => {
+                    if (draftMarker) {
+                        map.removeLayer(draftMarker);
+                        draftMarker = null;
+                    }
+                    nearbyPOIs.value = [];
+                    drawerMode.value = 'edit';
+                    revealMoney.value = false;
+
+                    form.value = {
+                        id: job.id,
+                        date: job.date,
+                        startTime: job.startTime,
+                        endTime: job.endTime,
+                        location: job.location,
+                        subAddress: job.subAddress || '',
+                        lat: job.lat,
+                        lng: job.lng,
+                        serviceCode: job.serviceCode,
+                        ownerId: job.ownerId,
+                        clientTotal: job.clientTotal,
+                        crew: JSON.parse(JSON.stringify(job.crew)),
+                        externalText: job.externals.join(', '),
+                        note: job.note || ''
+                    };
+                    drawerOpen.value = true;
+                    map.setView([job.lat, job.lng], 15, { animate: true });
+                };
+
+                const closeDrawer = () => {
+                    drawerOpen.value = false;
+                    if (draftMarker) {
+                        map.removeLayer(draftMarker);
+                        draftMarker = null;
+                    }
+                    renderPins();
+                };
+
+                const changeService = (code) => {
+                    form.value.serviceCode = code;
+                    form.value.crew = form.value.crew.filter(c => {
+                        const m = members.value.find(x => x.id === c.userId);
+                        return m && m.services.includes(code);
+                    });
+                };
+
+                const isSelected = (userId) => form.value.crew.some(c => c.userId === userId);
+
+                const toggleCrew = (userId) => {
+                    const idx = form.value.crew.findIndex(c => c.userId === userId);
+                    if (idx >= 0) form.value.crew.splice(idx, 1);
+                    else form.value.crew.push({ userId, pay: 2000000, paid: false });
+                };
+
+                const saveJob = () => {
+                    if (!form.value.location) return;
+                    const externals = form.value.externalText ? form.value.externalText.split(',').map(s => s.trim()).filter(Boolean) : [];
+                    const payload = {
+                        id: form.value.id || Date.now(),
+                        date: form.value.date,
+                        startTime: form.value.startTime,
+                        endTime: form.value.endTime,
+                        serviceCode: form.value.serviceCode,
+                        location: form.value.location,
+                        subAddress: form.value.subAddress,
+                        lat: form.value.lat,
+                        lng: form.value.lng,
+                        ownerId: form.value.ownerId,
+                        clientTotal: form.value.clientTotal,
+                        crew: form.value.crew.length > 0 ? JSON.parse(JSON.stringify(form.value.crew)) : [{ userId: currentUser.value.id, pay: 2000000, paid: false }],
+                        externals,
+                        note: form.value.note
+                    };
+
+                    if (drawerMode.value === 'create') {
+                        jobs.value.push(payload);
+                    } else {
+                        const idx = jobs.value.findIndex(j => j.id === form.value.id);
+                        if (idx >= 0) jobs.value[idx] = payload;
+                    }
+                    selectedDate.value = form.value.date;
+                    closeDrawer();
+                };
+
+                const deleteJob = (id) => {
+                    jobs.value = jobs.value.filter(j => j.id !== id);
+                    closeDrawer();
+                };
+
+                // Tìm kiếm địa điểm
+                const searchPlace = async () => {
+                    if (!searchQuery.value.trim()) return;
+                    const q = encodeURIComponent(searchQuery.value.trim());
+                    const res = await fetch(`https://photon.komoot.io/api/?q=${q}&lat=21.0285&lon=105.8542&limit=5`).then(r => r.json()).catch(() => null);
+                    if (res && res.features) {
+                        searchResults.value = res.features.map(f => ({
+                            mainName: f.properties.name || f.properties.street || 'Địa điểm',
+                            subAddress: [f.properties.street, f.properties.district, f.properties.city].filter(Boolean).join(', '),
+                            lat: f.geometry.coordinates[1],
+                            lng: f.geometry.coordinates[0]
+                        }));
+                    }
+                };
+
+                const pickSearchResult = (p) => {
+                    searchResults.value = [];
+                    map.setView([p.lat, p.lng], 16, { animate: true });
+                    onMapClick({ latlng: { lat: p.lat, lng: p.lng } });
+                    form.value.location = p.mainName;
+                    form.value.subAddress = p.subAddress;
+                };
+
+                // Profile settings
+                const toggleMyService = (code) => {
+                    const idx = currentUser.value.services.indexOf(code);
+                    if (idx >= 0) currentUser.value.services.splice(idx, 1);
+                    else currentUser.value.services.push(code);
+                };
+
+                const addCustomBusyDate = () => {
+                    if (newBusyDate.value && !currentUser.value.customBusyDates.includes(newBusyDate.value)) {
+                        currentUser.value.customBusyDates.push(newBusyDate.value);
+                    }
+                };
+
+                // Xuất Excel theo Tháng (Chỉ xuất các Job liên quan đến mình trong tháng đã chọn)
+                const exportMonthlyExcel = () => {
+                    const monthJobs = jobs.value.filter(j =>
+                        j.date.startsWith(exportMonth.value) &&
+                        (j.ownerId === currentUser.value.id || j.crew.some(c => c.userId === currentUser.value.id))
+                    );
+
+                    const rows = monthJobs.map((j, i) => {
+                        const isOwner = j.ownerId === currentUser.value.id;
+                        const myCrew = j.crew.find(c => c.userId === currentUser.value.id);
+                        const totalCrewCost = j.crew.reduce((s, c) => s + (c.pay || 0), 0);
+
+                        return {
+                            'STT': i + 1,
+                            'Ngày': formatDateVN(j.date),
+                            'Giờ': `${j.startTime} - ${j.endTime}`,
+                            'Địa điểm': j.location,
+                            'Dịch vụ': getServiceLabel(j.serviceCode),
+                            'Chủ Job': j.ownerId ? getMemberName(j.ownerId) : 'Khách lẻ',
+                            'Thợ chạy': j.crew.map(c => getMemberName(c.userId)).concat(j.externals).join(', '),
+                            'Cát-xê của tôi': myCrew ? myCrew.pay : 0,
+                            'Tổng thu khách (Chủ Job)': isOwner ? (j.clientTotal || 0) : '',
+                            'Lãi chênh (Chủ Job)': (isOwner && j.clientTotal) ? (j.clientTotal - totalCrewCost) : '',
+                            'Thanh toán': myCrew ? (myCrew.paid ? 'Đã TT' : 'Chờ TT') : 'Chủ Job',
+                            'Ghi chú': j.note || ''
+                        };
+                    });
+
+                    const ws = XLSX.utils.json_to_sheet(rows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, `Thang_${exportMonth.value}`);
+                    XLSX.writeFile(wb, `Job_${currentUser.value.name}_${exportMonth.value}.xlsx`);
+                };
+
+                // Vẽ các nhãn ghim đẹp trên Bản đồ (Tuyệt đối không hiện tiền trên Map)
+                const renderPins = () => {
+                    if (!map) return;
+                    markers.forEach(m => map.removeLayer(m));
+                    markers = [];
+
+                    myVisibleJobs.value.forEach(j => {
+                        const isOwner = j.ownerId === currentUser.value.id;
+                        const sv = serviceCatalog.find(s => s.code === j.serviceCode);
+                        const crewNames = j.crew.map(c => getMemberName(c.userId)).join(', ');
+
+                        const icon = L.divIcon({
+                            className: '',
+                            html: `<div class="custom-pin ${isOwner ? 'custom-pin-owner' : ''}">
+                      <span>${sv ? sv.icon : '📍'}</span>
+                      <span>${j.startTime} • ${j.location}</span>
+                      <span style="opacity:0.75; font-weight:400;">(${crewNames})</span>
+                    </div>`,
+                            iconAnchor: [20, 20]
+                        });
+
+                        const m = L.marker([j.lat, j.lng], { icon }).addTo(map);
+                        m.on('click', () => openEditDrawer(j));
+                        markers.push(m);
+                    });
+                };
+
+                const formatDateVN = (d) => d ? d.split('-').reverse().join('/') : '';
+
+                onMounted(() => {
+                    map = L.map('map', { zoomControl: false }).setView([21.005, 105.815], 13);
+                    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+                    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+                        maxZoom: 19
+                    }).addTo(map);
+
+                    map.on('click', onMapClick);
+                    renderPins();
+                });
+
+                watch([selectedDate, viewAllMonth, exportMonth, selectedUserId], () => renderPins());
+
+                return {
+                    selectedDate, viewAllMonth, exportMonth, selectedUserId, currentUser,
+                    serviceCatalog, members, drawerOpen, drawerMode, revealMoney, showProfileModal,
+                    newBusyDate, nearbyPOIs, searchQuery, searchResults, form,
+                    filteredCandidates, myCrewInForm,
+                    getMemberName, getServiceLabel, onMapClick, openEditDrawer, closeDrawer,
+                    changeService, isSelected, toggleCrew, saveJob, deleteJob,
+                    searchPlace, pickSearchResult, toggleMyService, addCustomBusyDate,
+                    exportMonthlyExcel, formatDateVN
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+
+</html>
