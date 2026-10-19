@@ -1,0 +1,27 @@
+services:
+  web:
+    build: .
+    container_name: eventmap_app
+    restart: unless-stopped
+    volumes:
+      # Mount thư mục ./data để lưu file SQLite eventmap.db
+      # Dữ liệu sẽ luôn tồn tại an toàn trên VPS kể cả khi nâng cấp hay restart container
+      - ./data:/app/data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/eventmap.db
+
+  caddy:
+    image: caddy:alpine
+    container_name: eventmap_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+    depends_on:
+      - web

@@ -1,0 +1,15 @@
+# ==============================================================
+# CẤU HÌNH CADDY WEBSERVER (TỰ ĐỘNG CẤP HTTPS)
+# ==============================================================
+
+# TRƯỜNG HỢP 1: Khi mới mua VPS, test trước bằng IP (Chạy cổng HTTP 80)
+:80 {
+    reverse_proxy web:8080
+}
+
+# TRƯỜNG HỢP 2: Khi đã có tên miền trỏ về IP của VPS
+# Chỉ cần đóng comment khối ":80" ở trên và mở comment khối dưới đây:
+#
+# yourdomain.com {
+#     reverse_proxy web:8080
+# }

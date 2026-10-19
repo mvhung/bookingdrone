@@ -62,7 +62,7 @@ Comprehensive architectural reference, development guidelines, and operational i
 
 ---
 
-## 3. Database Schema (EF Core / SQL Server)
+## 3. Database Schema (EF Core / SQLite)
 
 1. **`Users`**:
    - `Id` (int PK)
@@ -150,7 +150,7 @@ dotnet build
 dotnet run --urls "http://localhost:5220"
 ```
 - Swagger UI: `http://localhost:5220/swagger`
-- Database: Uses SQL Server (`localhost\SQLEXPRESS`), database `EventMapCrewDb`. Automatically created and seeded on startup.
+- Database: Uses lightweight SQLite (`data/eventmap.db`). Automatically created and seeded on startup.
 
 ### Frontend (Vue 3 + Vite)
 ```bash
@@ -168,3 +168,53 @@ npm run dev
 - **Always preserve role-based DTO masking**: Never return `ClientTotalRevenue` to non-owners.
 - **Maintain monorepo structure**: Keep backend in `/backend` and frontend in `/frontend`.
 - **Keep map-first aesthetics**: Maintain full-screen map layout (`100vw` x `100vh`) with zero intrusive sidebars.
+
+---
+
+## 7. Production Deployment & DevOps Architecture (VPS + SQLite + Docker + Caddy)
+
+### Strategy & Rationale
+- Designed for low-cost, ultra-lightweight production (8–10 crew members, 1 vCPU, 1–2 GB RAM VPS ~$2–$3/month).
+- **Database**: Uses SQLite (`Microsoft.EntityFrameworkCore.Sqlite`) storing all records into a single persistent file (`data/eventmap.db`). Zero RAM overhead compared to SQL Server's 2GB minimum.
+- **Single-Host Distribution**: Vue 3 SPA is compiled (`npm run build`) and injected directly into ASP.NET Core `wwwroot/`. The .NET 8 application serves static files and handles SPA routing fallback (`app.MapFallbackToFile("index.html")`), eliminating CORS issues and removing the need for a separate frontend server.
+- **Automated SSL/TLS**: Caddy acts as reverse proxy on ports 80/443, automatically acquiring and auto-renewing Let's Encrypt certificates when a domain is configured.
+
+### Container & File Structure
+- `Dockerfile`: Multi-stage build (Node 20 Alpine -> .NET 8 SDK -> ASP.NET 8 Runtime).
+- `docker-compose.yml`:
+  - `web`: .NET 8 container running at port 8080.
+  - `caddy`: Reverse proxy routing port 80/443 to `web:8080`.
+  - Persistent volume: `./data:/app/data` (stores `eventmap.db` on host VPS).
+  - SSL certs volume: `caddy_data` and `caddy_config`.
+- `Caddyfile`: Configures routing. Default is `:80` for IP testing, or `domain.com { reverse_proxy web:8080 }` for automatic HTTPS.
+
+### VPS Deployment Playbook (Next Steps When Resuming)
+1. **VPS Specs**: Ubuntu 22.04 LTS, 1 vCPU, 1GB RAM (Vietnix, TinoHost, AZDIGI, Hetzner, etc.).
+2. **Access VPS via SSH**:
+   ```bash
+   ssh root@<VPS_IP>
+   ```
+3. **Install Docker Engine**:
+   ```bash
+   curl -fsSL https://get.docker.com | sh
+   ```
+4. **Clone & Launch Application**:
+   ```bash
+   git clone https://github.com/mvhung/bookingdrone.git
+   cd bookingdrone
+   docker compose up -d
+   ```
+5. **Configure Custom Domain & HTTPS**:
+   - In DNS manager, add `A` record pointing to `<VPS_IP>`.
+   - In `Caddyfile`, replace `:80` block with your domain:
+     ```caddyfile
+     booking.yourdomain.com {
+         reverse_proxy web:8080
+     }
+     ```
+   - Reload Caddy: `docker compose restart caddy`.
+6. **Operations & Maintenance**:
+   - Pull updates: `git pull && docker compose up -d --build`
+   - Backup DB: Copy `./data/eventmap.db`
+   - Live logs: `docker compose logs -f web` or `docker compose logs -f caddy`
+

@@ -34,7 +34,7 @@ dotnet restore
 dotnet run --urls "http://localhost:5220"
 ```
 - API Swagger: `http://localhost:5220/swagger`
-- Database: Tự động khởi tạo và nạp dữ liệu mẫu 8 thành viên trên SQL Server `localhost\SQLEXPRESS`.
+- Database: Tự động khởi tạo và nạp dữ liệu mẫu 8 thành viên trên SQLite (`backend/data/eventmap.db`).
 
 ### 2. Frontend (Vue 3 + Vite)
 ```bash
@@ -43,6 +43,13 @@ npm install
 npm run dev
 ```
 - Truy cập giao diện: `http://localhost:5173/`
+
+### 3. Triển Khai Nhanh Bằng Docker (Khuyên Dùng Cho VPS)
+Chỉ cần chạy 1 lệnh duy nhất tại thư mục gốc của dự án:
+```bash
+docker compose up -d
+```
+Hệ thống sẽ tự động build cả Frontend & Backend, khởi động reverse proxy Caddy tự cấp SSL/HTTPS và mount cơ sở dữ liệu SQLite vào `./data`.
 
 ---
 

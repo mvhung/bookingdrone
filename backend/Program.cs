@@ -40,16 +40,29 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// DbContext
+// DbContext (SQLite)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? "Server=localhost\\SQLEXPRESS;Database=EventMapCrewDb;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true;";
+    ?? "Data Source=data/eventmap.db";
+
+// Ensure data folder exists if connection string specifies a folder
+try
+{
+    var sqliteBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString);
+    var dbFilePath = sqliteBuilder.DataSource;
+    if (!string.IsNullOrEmpty(dbFilePath))
+    {
+        var dir = Path.GetDirectoryName(dbFilePath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+    }
+}
+catch { }
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.UseSqlServer(connectionString, sqlOptions =>
-    {
-        sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
-    });
+    options.UseSqlite(connectionString);
 });
 
 // JWT Authentication
@@ -113,6 +126,10 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapControllers();
+app.MapFallbackToFile("index.html");
 
 app.Run();

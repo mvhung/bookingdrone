@@ -22,3 +22,11 @@ pnpm-debug.log*
 .env.*.local
 .DS_Store
 Thumbs.db
+
+# SQLite & Local Docker data
+*.db
+*.db-shm
+*.db-wal
+data/
+caddy_data/
+caddy_config/
