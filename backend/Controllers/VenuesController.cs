@@ -29,41 +29,8 @@ public class VenuesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<List<SavedVenue>>> GetVenues()
     {
-        // 1. Auto-sync any existing EventJobs locations that are not yet in SavedVenues
         var allJobs = await _context.EventJobs.ToListAsync();
         var existingVenues = await _context.SavedVenues.ToListAsync();
-        bool hasChanges = false;
-
-        foreach (var job in allJobs)
-        {
-            if (string.IsNullOrWhiteSpace(job.LocationName)) continue;
-            var trimmed = job.LocationName.Trim();
-
-            var matched = existingVenues.Any(v => 
-                v.Name.Trim().Equals(trimmed, StringComparison.OrdinalIgnoreCase) ||
-                (Math.Abs(v.Latitude - job.Latitude) < 0.0008m && Math.Abs(v.Longitude - job.Longitude) < 0.0008m));
-
-            if (!matched)
-            {
-                var newVenue = new SavedVenue
-                {
-                    Name = trimmed,
-                    SubAddress = job.SubAddress?.Trim() ?? string.Empty,
-                    Latitude = job.Latitude,
-                    Longitude = job.Longitude,
-                    UsageCount = 1,
-                    CreatedAt = DateTime.UtcNow
-                };
-                _context.SavedVenues.Add(newVenue);
-                existingVenues.Add(newVenue);
-                hasChanges = true;
-            }
-        }
-
-        if (hasChanges)
-        {
-            await _context.SaveChangesAsync();
-        }
 
         // 2. Compute accurate actual job count for every venue
         foreach (var v in existingVenues)
@@ -174,17 +141,8 @@ public class VenuesController : ControllerBase
         var venue = await _context.SavedVenues.FindAsync(id);
         if (venue == null) return NotFound();
 
-        var vMinLat = venue.Latitude - 0.001m;
-        var vMaxLat = venue.Latitude + 0.001m;
-        var vMinLng = venue.Longitude - 0.001m;
-        var vMaxLng = venue.Longitude + 0.001m;
-
-        // Remove associated jobs at this venue so they don't recreate it
-        var jobsAtVenue = await _context.EventJobs
-            .Where(j => j.LocationName == venue.Name || (j.Latitude >= vMinLat && j.Latitude <= vMaxLat && j.Longitude >= vMinLng && j.Longitude <= vMaxLng))
-            .ToListAsync();
-
-        _context.EventJobs.RemoveRange(jobsAtVenue);
+        // Chỉ xóa địa điểm khỏi danh mục SavedVenues.
+        // Giữ nguyên 100% tất cả các EventJobs đã lên lịch của thợ và khách hàng!
         _context.SavedVenues.Remove(venue);
         await _context.SaveChangesAsync();
         return NoContent();

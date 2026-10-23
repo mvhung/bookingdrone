@@ -172,7 +172,7 @@ async function saveVenueForm() {
 }
 
 async function handleDeleteVenue(id: number, name: string) {
-  if (!confirm(`Bạn có chắc muốn xóa địa điểm / tiệc "${name}" không?`)) return;
+  if (!confirm(`Bạn có chắc muốn xóa địa điểm "${name}" khỏi danh mục không?\n(Lưu ý: Các job đã lên lịch tại đây vẫn được giữ nguyên)`)) return;
   try {
     await venuesStore.deleteVenue(id);
     if (venuesStore.editingVenueData?.id === id) {

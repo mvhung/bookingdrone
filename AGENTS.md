@@ -152,6 +152,21 @@ Comprehensive architectural reference, development guidelines, and operational i
   ```
 - Assigned crew members have **Read-Only** access in the UI and cannot modify any job properties, payouts, or delete the job.
 
+### Rule E: Master Venues (`SavedVenues`) vs Transactional Jobs (`EventJobs`)
+- `SavedVenues` serves as the catalog/address book of known event locations and hall names.
+- **Deleting a venue (`DELETE /api/venues/{id}`) MUST NEVER delete `EventJobs`**:
+  - Venue deletion strictly removes the entry from `SavedVenues`.
+  - All existing `EventJobs`, assignments, cast payouts, notes, and dates are preserved 100%.
+  - `GET /api/venues` must never auto-recreate/resurrect a deleted venue from existing jobs.
+- **Deleting a Job (`DELETE /api/jobs/{id}`)**:
+  - Performed exclusively via `JobSideDrawer.vue` by the job's owner or creator.
+
+### Rule F: Map Clutter & Clustering Guidelines
+- **POI Suppression**: Both Roadmap and Hybrid Satellite tiles apply Google Maps apistyle filters (`s.t:6|p.v:off,s.t:33|p.v:off,s.t:2|p.v:off`) to strip base POIs (hotels, museums, parks).
+- **Cluster Breakdown**: Clusters must display service breakdown badges (e.g. `2🦋 1🚁`), never generic venue counts like "2 điểm".
+- **Pin Markers**: Badges must remain horizontal (never rotated) and pin icons must render clear upright service symbols.
+- **Ultra-Compact Job Drawer**: Only "Giờ dự kiến" (start time) is picked; `endTime` automatically calculates as `startTime + 4h` without taking extra screen space. Service and crew selectors sit on the same row. Notes are positioned at the bottom.
+
 ---
 
 ## 5. Local Development Commands

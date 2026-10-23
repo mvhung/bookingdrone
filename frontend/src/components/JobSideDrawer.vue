@@ -184,6 +184,25 @@ async function fetchAvailability() {
   }
 }
 
+function add4Hours(timeStr: string): string {
+  if (!timeStr) return '12:00';
+  const parts = timeStr.split(':');
+  let h = (parseInt(parts[0], 10) || 0) + 4;
+  if (h >= 24) h = h - 24;
+  const hh = h.toString().padStart(2, '0');
+  const mm = parts[1] || '00';
+  return `${hh}:${mm}`;
+}
+
+watch(
+  () => form.value.startTime,
+  (newStart) => {
+    if (newStart) {
+      form.value.endTime = add4Hours(newStart);
+    }
+  }
+);
+
 watch(
   () => [form.value.eventDate, form.value.startTime, form.value.endTime, form.value.serviceCode],
   () => {
@@ -191,20 +210,17 @@ watch(
   }
 );
 
-function changeService(code: string) {
-  form.value.serviceCode = code;
-}
-
 function isCrewSelected(userId: number): boolean {
   return form.value.crew.some(c => c.userId === userId);
 }
 
-function toggleCrew(candidate: AvailabilityItemDto) {
-  if (!canEdit.value) return;
-  const idx = form.value.crew.findIndex(c => c.userId === candidate.userId);
-  if (idx >= 0) {
-    form.value.crew.splice(idx, 1);
-  } else {
+function onAddCrewFromDropdown(event: Event) {
+  const selectEl = event.target as HTMLSelectElement;
+  const val = selectEl.value;
+  if (!val) return;
+  const userId = Number(val);
+  const candidate = availabilityList.value.find(c => c.userId === userId);
+  if (candidate && !isCrewSelected(userId)) {
     form.value.crew.push({
       userId: candidate.userId,
       userName: candidate.name,
@@ -212,6 +228,15 @@ function toggleCrew(candidate: AvailabilityItemDto) {
       isPaid: false,
       personalNote: ''
     });
+  }
+  selectEl.value = '';
+}
+
+function removeCrew(userId: number) {
+  if (!canEdit.value) return;
+  const idx = form.value.crew.findIndex(c => c.userId === userId);
+  if (idx >= 0) {
+    form.value.crew.splice(idx, 1);
   }
 }
 
@@ -380,290 +405,239 @@ function formatDateVN(dateStr: string) {
       </div>
     </div>
 
-    <!-- BODY: 5 STEPS -->
-    <div class="flex-1 min-h-0 overflow-y-auto p-4 pb-20 space-y-4 text-xs">
+    <!-- BODY: ULTRA-COMPACT FORM -->
+    <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-3.5 text-xs">
 
-
-      <!-- STEP 1: NGÀY & GIỜ CHẠY -->
-      <div v-if="canEdit" class="grid grid-cols-12 gap-2">
-        <div class="col-span-5">
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
-            Ngày
-          </label>
-          <input 
-            type="date" 
-            v-model="form.eventDate"
-            class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-          />
-        </div>
-        <div class="col-span-7">
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
-            Khung Giờ
-          </label>
-          <div class="flex items-center gap-1.5">
+      <!-- EDIT / CREATE MODE -->
+      <template v-if="canEdit">
+        <!-- ROW 1: NGÀY & GIỜ DỰ KIẾN (Tự động +4h giờ kết thúc) -->
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+              Ngày
+            </label>
+            <input 
+              type="date" 
+              v-model="form.eventDate"
+              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-slate-800 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+              Giờ dự kiến
+            </label>
             <input 
               type="time" 
               v-model="form.startTime"
-              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 font-bold text-center text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
-            <span class="text-slate-300 font-bold">-</span>
-            <input 
-              type="time" 
-              v-model="form.endTime"
-              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 font-bold text-center text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-center text-slate-800 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             />
           </div>
         </div>
-      </div>
-      <!-- Step 1 Read-only -->
-      <div v-else class="bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl flex items-center justify-between font-bold text-slate-800">
-        <span>📅 {{ formatDateVN(form.eventDate) }}</span>
-        <span class="text-indigo-600 font-extrabold text-xs">⏰ {{ form.startTime }} - {{ form.endTime }}</span>
-      </div>
 
-      <!-- STEP 2: DỊCH VỤ -->
-      <div v-if="canEdit">
-        <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">
-          Dịch Vụ
-        </label>
-        <div class="flex flex-wrap gap-1.5">
-          <button 
-            v-for="sv in servicesList" 
-            :key="sv.code" 
-            type="button"
-            @click="changeService(sv.code)"
-            class="px-3 py-1.5 rounded-xl border font-semibold flex items-center gap-1.5 transition"
-            :class="[
-              form.serviceCode === sv.code 
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' 
-                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-            ]"
-          >
-            <span>{{ sv.icon }}</span>
-            <span>{{ sv.name }}</span>
-          </button>
-        </div>
-      </div>
-      <!-- Step 2 Read-only -->
-      <div v-else class="flex items-center gap-2">
-        <span class="text-[11px] font-bold text-slate-400 uppercase">Dịch vụ:</span>
-        <span class="px-3 py-1 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs">
-          {{ getServiceLabel(form.serviceCode) }}
-        </span>
-      </div>
-
-      <!-- STEP 3: THỢ CHẠY (Chỉ hiện chấm đỏ/xanh, không chú thích dài dòng) -->
-      <div>
-        <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">
-          Thợ Chạy
-        </label>
-
-        <!-- Candidate Chips for Edit Mode -->
-        <div v-if="canEdit" class="space-y-2">
-          <div class="flex flex-wrap gap-1.5">
-            <button 
-              v-for="candidate in availabilityList" 
-              :key="candidate.userId" 
-              type="button" 
-              @click="toggleCrew(candidate)"
-              class="px-3 py-1.5 rounded-xl border font-semibold flex items-center gap-1.5 transition"
-              :class="[
-                isCrewSelected(candidate.userId) 
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs' 
-                  : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-              ]" 
+        <!-- ROW 2: DỊCH VỤ & CHỌN THỢ (CÙNG 1 HÀNG DROPDOWN) -->
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+              Dịch Vụ
+            </label>
+            <select 
+              v-model="form.serviceCode"
+              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-slate-800 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             >
-              <!-- Chấm xanh / đỏ gọn gàng -->
-              <span 
-                class="w-2 h-2 rounded-full shrink-0"
-                :class="candidate.isBusy ? 'bg-rose-500' : 'bg-emerald-500'"
-              ></span>
-              <span>{{ candidate.name }}</span>
-              <span v-if="isCrewSelected(candidate.userId)" class="text-indigo-300 text-xs font-bold">
-                ✓
-              </span>
-            </button>
+              <option v-for="s in servicesList" :key="s.code" :value="s.code">
+                {{ s.icon }} {{ s.name }}
+              </option>
+            </select>
           </div>
 
-          <!-- Thêm thợ ngoài: icon + và chữ Thêm -->
-          <div class="flex items-center gap-1.5 pt-1">
-            <span class="text-slate-400 text-sm font-bold pl-1">+</span>
-            <input 
-              v-model="form.externalWorkersNote" 
-              placeholder="Thêm thợ ngoài..."
-              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+              Chọn Thợ
+            </label>
+            <select 
+              @change="onAddCrewFromDropdown($event)"
+              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-slate-800 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
+            >
+              <option value="">+ Chọn thợ...</option>
+              <option 
+                v-for="m in availabilityList" 
+                :key="m.userId" 
+                :value="m.userId"
+                :disabled="isCrewSelected(m.userId)"
+              >
+                {{ m.isBusy ? '🔴 Bận' : '🟢 Rảnh' }}: {{ m.name }} {{ isCrewSelected(m.userId) ? '(Đã chọn)' : '' }}
+              </option>
+            </select>
           </div>
         </div>
 
-        <!-- Read-only Crew Display -->
-        <div v-else class="space-y-1.5">
-          <div class="flex flex-wrap gap-1.5">
-            <span 
+        <!-- HÀNG CAST THỢ KHI ĐÃ CHỌN (KHÔNG CÓ TRẠNG THÁI THANH TOÁN) -->
+        <div v-if="form.crew.length > 0 || form.externalWorkersNote" class="space-y-1.5 pt-1">
+          <label class="block text-[11px] font-bold text-slate-400 uppercase">
+            Thợ Chạy & Cát-xê ({{ form.crew.length }})
+          </label>
+          
+          <div class="space-y-1.5">
+            <div 
               v-for="c in form.crew" 
               :key="c.userId"
-              class="px-3 py-1 rounded-xl bg-slate-100 border border-slate-200 font-bold text-slate-800 flex items-center gap-1.5"
+              class="flex items-center justify-between px-2.5 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs"
             >
-              <span>👤</span>
-              <span>{{ c.userName || getMemberName(c.userId) }}</span>
-            </span>
-            <span 
-              v-if="form.externalWorkersNote"
-              class="px-3 py-1 rounded-xl bg-amber-50 border border-amber-200 font-semibold text-amber-800 flex items-center gap-1"
-            >
-              <span>+</span>
-              <span>{{ form.externalWorkersNote }}</span>
-            </span>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <button 
+                  type="button" 
+                  @click="removeCrew(c.userId)"
+                  class="w-4 h-4 rounded-full bg-slate-200 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center text-[10px] font-bold shrink-0 transition cursor-pointer"
+                  title="Bỏ thợ này"
+                >
+                  ✕
+                </button>
+                <span class="font-bold text-slate-800 truncate">{{ c.userName || getMemberName(c.userId) }}</span>
+              </div>
+
+              <div class="flex items-center gap-1 shrink-0">
+                <span class="text-[10px] text-slate-400 font-bold">Cast:</span>
+                <input 
+                  type="number" 
+                  v-model.number="c.castAmount" 
+                  step="100000"
+                  class="bg-white border border-slate-200 rounded-lg px-2 py-0.5 font-bold text-emerald-700 w-24 text-right text-xs focus:outline-none"
+                />
+                <span class="text-[10px] font-bold text-slate-500">đ</span>
+              </div>
+            </div>
+
+            <!-- Thêm thợ ngoài -->
+            <div class="flex items-center gap-2 pt-0.5">
+              <input 
+                v-model="form.externalWorkersNote" 
+                placeholder="+ Thêm thợ ngoài (nếu có)..."
+                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-xs text-slate-700 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- STEP 4: CHỦ JOB & GHI CHÚ -->
-      <div v-if="canEdit" class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
-            Chủ Job
-          </label>
-          <select 
-            v-model="form.ownerUserId"
-            class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-          >
-            <option :value="null">Khách ngoài</option>
-            <option v-for="m in authStore.teamMembers" :key="m.id" :value="m.id">
-              {{ m.name }}
-            </option>
-          </select>
+        <!-- ROW 3: CHỦ JOB & TỔNG THU KHÁCH -->
+        <div class="grid grid-cols-2 gap-2.5 pt-1">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+              Chủ Job
+            </label>
+            <select 
+              v-model="form.ownerUserId"
+              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-bold text-slate-800 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            >
+              <option :value="null">Khách ngoài</option>
+              <option v-for="m in authStore.teamMembers" :key="m.id" :value="m.id">
+                {{ m.name }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+              Tổng thu khách
+            </label>
+            <div class="relative">
+              <input 
+                type="number" 
+                v-model.number="form.clientTotalRevenue" 
+                step="100000"
+                placeholder="0"
+                class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-2.5 pr-6 py-1.5 font-bold text-right text-slate-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              />
+              <span class="absolute right-2.5 top-1.5 text-xs text-slate-400 font-bold">đ</span>
+            </div>
+          </div>
         </div>
-        <div>
+
+        <!-- Lãi chênh lệch (nếu có thu khách) -->
+        <div 
+          v-if="form.clientTotalRevenue != null" 
+          class="flex items-center justify-between px-3 py-1 bg-indigo-50/70 border border-indigo-200/60 rounded-xl text-xs font-bold"
+        >
+          <span class="text-indigo-900">Lãi chênh:</span>
+          <span class="text-indigo-700 font-black">
+            {{ (ownerProfit ?? 0).toLocaleString('vi-VN') }} đ
+          </span>
+        </div>
+
+        <!-- GHI CHÚ DƯỚI CÙNG -->
+        <div class="pt-1">
           <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">
             Ghi Chú
           </label>
           <input 
             v-model="form.note" 
-            placeholder="Ghi chú..."
-            class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            placeholder="Nhập ghi chú cho tiệc này (nếu có)..."
+            class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 text-xs placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
           />
         </div>
-      </div>
-      <!-- Step 4 Read-only -->
-      <div v-else class="space-y-1 bg-slate-50 border border-slate-200 p-3 rounded-xl">
-        <div class="flex items-center justify-between">
-          <span class="text-slate-400 font-bold uppercase text-[10px]">Chủ Job:</span>
-          <span class="font-bold text-slate-800">
-            {{ jobsStore.activeJob?.ownerUserName || 'Khách lẻ' }}
-          </span>
-        </div>
-        <div v-if="form.note" class="pt-1 border-t border-slate-200/60 text-slate-600">
-          <span class="text-slate-400 font-bold uppercase text-[10px] block">Ghi chú:</span>
-          {{ form.note }}
-        </div>
-      </div>
+      </template>
 
-      <!-- STEP 5: CÁT-XÊ & THANH TOÁN (Tự động hiển thị theo vai trò, không nút ẩn) -->
-      <div class="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 space-y-3">
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs">💰</span>
-          <span class="text-[11px] font-extrabold text-slate-700 uppercase tracking-tight">
-            Cát-xê & Thanh toán
-          </span>
-        </div>
-
-        <!-- 1. NẾU LÀ CHỦ JOB / NGƯỜI TẠO (CAN EDIT): Xem được hết -->
-        <template v-if="canEdit">
-          <!-- Tổng thu khách -->
-          <div class="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs">
-            <span class="font-bold text-slate-700 text-[11px]">Tổng thu khách:</span>
-            <div class="flex items-center gap-1">
-              <input 
-                type="number" 
-                v-model.number="form.clientTotalRevenue" 
-                step="100000"
-                placeholder="Chưa nhập..."
-                class="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 font-extrabold text-slate-900 w-32 text-right focus:outline-none focus:bg-white focus:ring-1 focus:ring-indigo-500"
-              />
-              <span class="font-bold text-slate-600 text-[11px]">đ</span>
-            </div>
+      <!-- READ-ONLY SUMMARY (CHO THỢ ĐƯỢC GÁN) -->
+      <template v-else>
+        <div class="space-y-3 bg-slate-50 border border-slate-200 p-3.5 rounded-2xl font-medium">
+          <div class="flex items-center justify-between font-bold text-slate-800">
+            <span>📅 {{ formatDateVN(form.eventDate) }}</span>
+            <span class="text-indigo-600 font-extrabold text-xs">⏰ {{ form.startTime }} - {{ form.endTime }}</span>
           </div>
 
-          <!-- Chi trả từng thợ -->
-          <div class="space-y-1.5">
-            <div 
-              v-for="c in form.crew" 
-              :key="c.userId"
-              class="flex items-center justify-between bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs"
-            >
-              <span class="font-bold text-slate-700">
-                Trả {{ c.userName || getMemberName(c.userId) }}:
-              </span>
-              <div class="flex items-center gap-1.5">
-                <input 
-                  type="number" 
-                  v-model.number="c.castAmount" 
-                  step="100000"
-                  class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-bold text-emerald-700 w-24 text-right focus:outline-none"
-                />
-                <button 
-                  type="button" 
-                  @click="c.isPaid = !c.isPaid"
-                  class="px-2 py-1 rounded-lg font-bold text-[10px] transition"
-                  :class="c.isPaid ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
-                >
-                  {{ c.isPaid ? '✓ Đã TT' : 'Chờ TT' }}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Lợi nhuận chênh lệch -->
-          <div 
-            v-if="form.clientTotalRevenue != null" 
-            class="flex items-center justify-between px-3 py-1.5 bg-indigo-50/70 border border-indigo-200/70 rounded-xl font-bold text-[11px]"
-          >
-            <span class="text-indigo-900">Lãi chênh:</span>
-            <span class="text-indigo-700 font-extrabold text-xs">
-              {{ (ownerProfit ?? 0).toLocaleString('vi-VN') }} đ
+          <div class="flex items-center justify-between pt-1 border-t border-slate-200/70">
+            <span class="text-slate-400 font-bold text-[11px] uppercase">Dịch vụ:</span>
+            <span class="px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 font-bold text-xs">
+              {{ getServiceLabel(form.serviceCode) }}
             </span>
           </div>
-        </template>
 
-        <!-- 2. NẾU LÀ THỢ ĐƯỢC PHÂN CÔNG (READ ONLY): Chỉ xem cát-xê của chính mình -->
-        <template v-else>
-          <div 
-            v-if="myCrewItems.length > 0"
-            class="flex items-center justify-between bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs"
-          >
-            <span class="font-bold text-slate-700">Cát-xê của bạn:</span>
-            <div class="flex items-center gap-2">
-              <span class="font-black text-emerald-700 text-sm">
-                {{ (myCrewItems[0].castAmount ?? 0).toLocaleString('vi-VN') }} đ
-              </span>
+          <div class="flex items-center justify-between pt-1 border-t border-slate-200/70">
+            <span class="text-slate-400 font-bold text-[11px] uppercase">Chủ Job:</span>
+            <span class="font-bold text-slate-800">
+              {{ jobsStore.activeJob?.ownerUserName || jobsStore.activeJob?.createdByUserName || 'Khách lẻ' }}
+            </span>
+          </div>
+
+          <div class="pt-1 border-t border-slate-200/70 space-y-1">
+            <span class="text-slate-400 font-bold text-[11px] uppercase block">Thợ cùng chạy:</span>
+            <div class="flex flex-wrap gap-1">
               <span 
-                class="px-2 py-0.5 rounded-lg font-bold text-[10px]"
-                :class="myCrewItems[0].isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+                v-for="c in form.crew" 
+                :key="c.userId"
+                class="px-2 py-0.5 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-[11px]"
               >
-                {{ myCrewItems[0].isPaid ? '✓ Đã TT' : 'Chờ TT' }}
+                {{ c.userName || getMemberName(c.userId) }}
+              </span>
+              <span v-if="form.externalWorkersNote" class="px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-semibold text-[11px]">
+                + {{ form.externalWorkersNote }}
               </span>
             </div>
           </div>
 
-          <div v-else class="text-slate-400 text-center py-1">
-            Không có thông tin cát-xê
+          <div v-if="myCrewItems.length > 0" class="flex items-center justify-between pt-2 border-t border-slate-200/70 bg-white p-2.5 rounded-xl border">
+            <span class="font-bold text-slate-700">Cát-xê của bạn:</span>
+            <span class="font-black text-emerald-700 text-sm">
+              {{ (myCrewItems[0].castAmount ?? 0).toLocaleString('vi-VN') }} đ
+            </span>
           </div>
-        </template>
 
-      </div>
+          <div v-if="form.note" class="pt-1 border-t border-slate-200/70 text-slate-600 text-xs">
+            <span class="text-slate-400 font-bold text-[10px] uppercase block mb-0.5">Ghi chú:</span>
+            {{ form.note }}
+          </div>
+        </div>
+      </template>
 
     </div>
 
     <!-- FOOTER: Chỉ chủ/người tạo mới có nút Lưu và Xoá -->
-    <div class="p-4 border-t border-slate-100 bg-white flex items-center justify-between shrink-0 shadow-lg">
+    <div class="p-3.5 border-t border-slate-100 bg-white flex items-center justify-between shrink-0 shadow-lg">
       <template v-if="canEdit">
         <button 
           v-if="jobsStore.drawerMode === 'edit'" 
           @click="handleDelete" 
           :disabled="isDeleting"
           type="button"
-          class="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center gap-1"
+          class="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
         >
           <span>🗑️</span>
           <span>{{ isDeleting ? 'Đang xoá...' : 'Xoá' }}</span>
@@ -674,7 +648,7 @@ function formatDateVN(dateStr: string) {
           <button 
             @click="jobsStore.closeDrawer" 
             type="button"
-            class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold transition"
+            class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold transition cursor-pointer"
           >
             Đóng
           </button>
@@ -682,7 +656,7 @@ function formatDateVN(dateStr: string) {
             @click="handleSave" 
             :disabled="isSaving"
             type="button"
-            class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md hover:shadow-indigo-500/25 transition flex items-center gap-1.5"
+            class="px-5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md hover:shadow-indigo-500/25 transition flex items-center gap-1.5 cursor-pointer"
           >
             <span v-if="isSaving">Đang lưu...</span>
             <span v-else>Lưu Job</span>
@@ -696,7 +670,7 @@ function formatDateVN(dateStr: string) {
         <button 
           @click="jobsStore.closeDrawer" 
           type="button"
-          class="px-6 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs"
+          class="px-6 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs cursor-pointer"
         >
           Đóng
         </button>
