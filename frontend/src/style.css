@@ -10,39 +10,109 @@ html, body, #app {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom Map Marker Pins */
-.custom-pin {
-  background: #0f172a;
-  color: #f8fafc;
-  padding: 5px 12px;
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
-  border: 2px solid #ffffff;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
-  user-select: none;
+/* Inverted Teardrop Map Pin (Giọt Nước Ngược) - Zero Drift Precision */
+.teardrop-marker {
+  background: transparent !important;
+  border: none !important;
+  overflow: visible !important;
 }
 
-.custom-pin:hover {
-  transform: translateY(-2px) scale(1.05);
-  box-shadow: 0 16px 28px -4px rgba(0, 0, 0, 0.5);
+.teardrop-container {
+  position: relative;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.teardrop-body {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.4));
+  transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.teardrop-body:hover {
+  transform: translateX(-50%) scale(1.1);
   z-index: 1000 !important;
 }
 
-.custom-pin-owner {
-  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
-  border-color: #e0e7ff;
-  box-shadow: 0 10px 25px -3px rgba(79, 70, 229, 0.5), 0 4px 6px -4px rgba(79, 70, 229, 0.3);
+.teardrop-bubble {
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 4px 9px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 2px solid #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
-.custom-pin-owner:hover {
-  box-shadow: 0 18px 30px -4px rgba(79, 70, 229, 0.65);
+.teardrop-bubble-owner {
+  background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+  border-color: #ffffff;
+}
+
+/* Downward beak / pointer triangle */
+.teardrop-beak {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #0f172a;
+  margin-top: -1px;
+}
+
+.teardrop-beak-owner {
+  border-top-color: #554fe8;
+}
+
+/* Cluster styling when zoomed out */
+.cluster-bubble {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #ffffff;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  border: 2px solid #38bdf8;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
+}
+
+.cluster-beak {
+  border-top-color: #1e293b;
+}
+
+/* Multi-show popup styling */
+.leaflet-popup-content-wrapper {
+  border-radius: 20px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.4 !important;
+}
+
+.leaflet-popup-tip {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15) !important;
 }
 
 /* Leaflet Container Styling */
@@ -86,6 +156,18 @@ html, body, #app {
   opacity: 0.9;
 }
 
+/* Left Sliding Panels (Calendar & Crew Admin) */
+.drawer-left-enter-active,
+.drawer-left-leave-active {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+
+.drawer-left-enter-from,
+.drawer-left-leave-to {
+  transform: translateX(-100%);
+  opacity: 0.8;
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -115,3 +197,199 @@ html, body, #app {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* ============================================================
+   ALOBO-STYLE VENUE MAP MARKERS & POPUP
+   ============================================================ */
+
+.alobo-pin-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  transform: translate(-50%, -100%);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+.alobo-pin-container:hover {
+  transform: translate(-50%, -106%) scale(1.08);
+  z-index: 1000 !important;
+}
+
+/* Alobo Hover Venue Name Tooltip */
+.alobo-venue-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 50;
+}
+
+.alobo-pin-container:hover .alobo-venue-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+/* Service counts breakdown badge floating above the pin */
+.alobo-pin-badge {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(6px);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  border: 1.5px solid #ffffff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Cluster styling when zoomed out (Pill with service breakdown) */
+.alobo-cluster-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.alobo-cluster-pill {
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.alobo-cluster-pill:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+  box-shadow: 0 6px 22px rgba(99, 102, 241, 0.6), 0 0 0 2.5px #6366f1;
+}
+
+.cluster-badge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Pick marker styling */
+.custom-pick-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.pick-pin-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  transform: translate(-50%, -100%);
+  filter: drop-shadow(0 4px 12px rgba(220, 38, 38, 0.45));
+}
+
+.pick-pin-teardrop {
+  width: 32px;
+  height: 32px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: 2.5px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pickBounce 1s infinite alternate cubic-bezier(0.28, 0.84, 0.42, 1);
+}
+
+.pick-pin-dot {
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border-radius: 50%;
+  transform: rotate(45deg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes pickBounce {
+  0% { transform: rotate(-45deg) translateY(0); }
+  100% { transform: rotate(-45deg) translateY(-4px); }
+}
+
+/* Alobo Teardrop Pin */
+.alobo-pin-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 10px rgba(2, 132, 199, 0.45);
+}
+
+.alobo-pin-icon-content {
+  transform: rotate(45deg);
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alobo-pin-icon-content svg {
+  width: 16px;
+  height: 16px;
+  fill: #ffffff;
+  display: block;
+}
+
+.alobo-pin-active {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.55);
+}
+
+.alobo-pin-owner {
+  background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.55);
+}
+
+.alobo-pin-empty {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  box-shadow: 0 2px 6px rgba(100, 116, 139, 0.3);
+  opacity: 0.9;
+}
+

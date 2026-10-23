@@ -46,10 +46,17 @@ public class ProfileController : ControllerBase
             user.Name,
             user.AvatarUrl,
             services,
+            user.IsAdmin,
             user.OfficeBusyEnabled,
             user.OfficeBusyStart.ToString("HH:mm"),
             user.OfficeBusyEnd.ToString("HH:mm"),
-            user.BusyDates.Select(b => new BusyDateItemDto(b.Id, b.BusyDate.ToString("yyyy-MM-dd"), b.Reason)).ToList()
+            user.BusyDates.Select(b => new BusyDateItemDto(
+                b.Id,
+                b.BusyDate.ToString("yyyy-MM-dd"),
+                b.Reason,
+                b.StartTime?.ToString("HH:mm"),
+                b.EndTime?.ToString("HH:mm")
+            )).ToList()
         ));
     }
 
@@ -83,10 +90,17 @@ public class ProfileController : ControllerBase
             user.Name,
             user.AvatarUrl,
             services,
+            user.IsAdmin,
             user.OfficeBusyEnabled,
             user.OfficeBusyStart.ToString("HH:mm"),
             user.OfficeBusyEnd.ToString("HH:mm"),
-            user.BusyDates.Select(b => new BusyDateItemDto(b.Id, b.BusyDate.ToString("yyyy-MM-dd"), b.Reason)).ToList()
+            user.BusyDates.Select(b => new BusyDateItemDto(
+                b.Id,
+                b.BusyDate.ToString("yyyy-MM-dd"),
+                b.Reason,
+                b.StartTime?.ToString("HH:mm"),
+                b.EndTime?.ToString("HH:mm")
+            )).ToList()
         ));
     }
 
@@ -99,17 +113,37 @@ public class ProfileController : ControllerBase
         if (!DateOnly.TryParse(request.Date, out var date))
             return BadRequest(new { message = "Invalid date format" });
 
+        TimeOnly? startTime = null;
+        if (!string.IsNullOrWhiteSpace(request.StartTime) && TimeOnly.TryParse(request.StartTime, out var s))
+        {
+            startTime = s;
+        }
+
+        TimeOnly? endTime = null;
+        if (!string.IsNullOrWhiteSpace(request.EndTime) && TimeOnly.TryParse(request.EndTime, out var e))
+        {
+            endTime = e;
+        }
+
         var busyDate = new UserBusyDate
         {
             UserId = userId,
             BusyDate = date,
+            StartTime = startTime,
+            EndTime = endTime,
             Reason = request.Reason ?? "Báo nghỉ"
         };
 
         _context.UserBusyDates.Add(busyDate);
         await _context.SaveChangesAsync();
 
-        return Ok(new BusyDateItemDto(busyDate.Id, busyDate.BusyDate.ToString("yyyy-MM-dd"), busyDate.Reason));
+        return Ok(new BusyDateItemDto(
+            busyDate.Id,
+            busyDate.BusyDate.ToString("yyyy-MM-dd"),
+            busyDate.Reason,
+            busyDate.StartTime?.ToString("HH:mm"),
+            busyDate.EndTime?.ToString("HH:mm")
+        ));
     }
 
     [HttpDelete("busy-dates/{id}")]

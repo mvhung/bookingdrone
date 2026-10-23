@@ -11,8 +11,73 @@ public static class DbInitializer
         // Ensure database is created
         await context.Database.EnsureCreatedAsync();
 
+        // Safety SQLite migrations for newly added tables/columns
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""ServiceTypes"" (
+                    ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_ServiceTypes"" PRIMARY KEY AUTOINCREMENT,
+                    ""Code"" TEXT NOT NULL,
+                    ""Name"" TEXT NOT NULL,
+                    ""Icon"" TEXT NOT NULL,
+                    ""Description"" TEXT NULL,
+                    ""IsActive"" INTEGER NOT NULL DEFAULT 1,
+                    ""DisplayOrder"" INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ServiceTypes_Code"" ON ""ServiceTypes"" (""Code"");
+            ");
+        }
+        catch { }
+
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""Users"" ADD COLUMN ""IsAdmin"" INTEGER NOT NULL DEFAULT 0;
+            ");
+        }
+        catch { }
+
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ""SavedVenues"" (
+                    ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_SavedVenues"" PRIMARY KEY AUTOINCREMENT,
+                    ""Name"" TEXT NOT NULL,
+                    ""SubAddress"" TEXT NULL,
+                    ""Latitude"" TEXT NOT NULL,
+                    ""Longitude"" TEXT NOT NULL,
+                    ""UsageCount"" INTEGER NOT NULL DEFAULT 1,
+                    ""CreatedAt"" TEXT NOT NULL
+                );
+            ");
+        }
+        catch { }
+
+        // User workflow: "Ban đầu thì sẽ không có địa điểm nào cả. Khi tạo job ở địa điểm nào thì mới tự động lưu địa điểm đó."
+
+
+        // Seed default service catalog if empty
+        if (!await context.ServiceTypes.AnyAsync())
+        {
+            context.ServiceTypes.AddRange(
+                new ServiceType { Code = "BUTTERFLY", Name = "Bướm", Icon = "🦋", DisplayOrder = 1 },
+                new ServiceType { Code = "FPV", Name = "FPV", Icon = "🚁", DisplayOrder = 2 },
+                new ServiceType { Code = "FLYCAM", Name = "Flycam", Icon = "✈️", DisplayOrder = 3 },
+                new ServiceType { Code = "CAMERA", Name = "Quay", Icon = "🎥", DisplayOrder = 4 },
+                new ServiceType { Code = "PHOTO", Name = "Chụp", Icon = "📸", DisplayOrder = 5 }
+            );
+            await context.SaveChangesAsync();
+        }
+
         if (await context.Users.AnyAsync())
         {
+            // Ensure Hưng is admin if already seeded
+            var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Name == "Hưng");
+            if (adminUser != null && !adminUser.IsAdmin)
+            {
+                adminUser.IsAdmin = true;
+                await context.SaveChangesAsync();
+            }
             return; // DB already seeded
         }
 
@@ -24,6 +89,7 @@ public static class DbInitializer
             new User
             {
                 Name = "Hưng",
+                IsAdmin = true,
                 PinHash = defaultPinHash,
                 AvatarUrl = "https://api.dicebear.com/7.x/bottts/svg?seed=Hung&backgroundColor=b6e3f4",
                 ServicesJson = JsonSerializer.Serialize(new[] { "BUTTERFLY", "FPV", "FLYCAM" }),

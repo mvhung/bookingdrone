@@ -2,12 +2,14 @@
 import { ref, computed, watch } from 'vue';
 import { useAuthStore } from '../stores/auth';
 import { useJobsStore } from '../stores/jobs';
+import { useVenuesStore } from '../stores/venues';
 import { availabilityApi } from '../services/api';
 import type { AvailabilityItemDto, SaveJobRequest } from '../types';
 import { SERVICE_CATALOG } from '../types';
 
 const authStore = useAuthStore();
 const jobsStore = useJobsStore();
+const venuesStore = useVenuesStore();
 
 const isSaving = ref(false);
 const isDeleting = ref(false);
@@ -120,6 +122,49 @@ watch(
   { immediate: true }
 );
 
+// Reactively update form location & coordinates when reverse geocoding completes
+watch(
+  () => [jobsStore.draftLocation?.location, jobsStore.draftLocation?.lat, jobsStore.draftLocation?.lng],
+  ([newLoc, newLat, newLng]) => {
+    if (jobsStore.drawerMode === 'create' && newLoc) {
+      if (
+        !form.value.locationName || 
+        form.value.locationName === 'Đang xác định...' || 
+        form.value.locationName === 'Địa điểm mới' || 
+        form.value.locationName === 'Vị trí đã chọn'
+      ) {
+        form.value.locationName = newLoc as string;
+      }
+      if (jobsStore.draftLocation?.subAddress && (!form.value.subAddress || form.value.subAddress === 'Hà Nội')) {
+        form.value.subAddress = jobsStore.draftLocation.subAddress;
+      }
+      if (jobsStore.draftLocation?.nearbyPois) {
+        form.value.nearbyPois = jobsStore.draftLocation.nearbyPois;
+      }
+      if (typeof newLat === 'number') {
+        form.value.latitude = newLat;
+      }
+      if (typeof newLng === 'number') {
+        form.value.longitude = newLng;
+      }
+    }
+  }
+);
+
+function selectPoi(poi: string) {
+  form.value.locationName = poi;
+  const coords = jobsStore.draftLocation?.poiCoordinates?.[poi];
+  if (coords) {
+    form.value.latitude = coords.lat;
+    form.value.longitude = coords.lng;
+    if (jobsStore.draftLocation) {
+      jobsStore.draftLocation.lat = coords.lat;
+      jobsStore.draftLocation.lng = coords.lng;
+    }
+  }
+}
+
+
 // Fetch Blind Availability when Date, Time, Service, or Job changes
 async function fetchAvailability() {
   if (!form.value.eventDate || !form.value.startTime || !form.value.endTime || !form.value.serviceCode) return;
@@ -221,6 +266,18 @@ async function handleSave() {
     } else if (form.value.id) {
       await jobsStore.updateJob(form.value.id, payload);
     }
+
+    // Auto sync venue in frontend store
+    if (payload.locationName && payload.locationName !== 'Địa điểm mới' && payload.locationName !== 'Vị trí đã chọn') {
+      try {
+        await venuesStore.saveVenue({
+          name: payload.locationName,
+          subAddress: payload.subAddress,
+          latitude: payload.latitude,
+          longitude: payload.longitude
+        });
+      } catch {}
+    }
   } catch (err: any) {
     alert(err.message || 'Lưu thất bại!');
   } finally {
@@ -242,13 +299,15 @@ async function handleDelete() {
   }
 }
 
+const servicesList = computed(() => authStore.services.length > 0 ? authStore.services : SERVICE_CATALOG);
+
 function getMemberName(userId: number) {
   const member = authStore.teamMembers.find(m => m.id === userId);
   return member?.name || `Thợ #${userId}`;
 }
 
 function getServiceLabel(code: string) {
-  const s = SERVICE_CATALOG.find(x => x.code === code);
+  const s = servicesList.value.find(x => x.code === code);
   return s ? `${s.icon} ${s.name}` : code;
 }
 
@@ -263,7 +322,7 @@ function formatDateVN(dateStr: string) {
     class="absolute top-0 right-0 h-full w-full sm:w-[400px] bg-white border-l border-slate-200/90 shadow-2xl z-30 flex flex-col select-none"
   >
     <!-- HEADER: Location Name IS the primary Job Title -->
-    <div class="p-4 border-b border-slate-100 bg-slate-50/80 space-y-2">
+    <div class="p-4 border-b border-slate-100 bg-slate-50/80 space-y-2 shrink-0">
       <div class="flex items-start justify-between gap-2">
         <div class="flex-1 min-w-0">
           
@@ -313,7 +372,7 @@ function formatDateVN(dateStr: string) {
           v-for="(poi, idx) in form.nearbyPois" 
           :key="idx" 
           type="button" 
-          @click="form.locationName = poi"
+          @click="selectPoi(poi)"
           class="text-[10px] bg-white hover:bg-indigo-600 hover:text-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-md transition shadow-2xs font-medium"
         >
           {{ poi }}
@@ -322,7 +381,8 @@ function formatDateVN(dateStr: string) {
     </div>
 
     <!-- BODY: 5 STEPS -->
-    <div class="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+    <div class="flex-1 min-h-0 overflow-y-auto p-4 pb-20 space-y-4 text-xs">
+
 
       <!-- STEP 1: NGÀY & GIỜ CHẠY -->
       <div v-if="canEdit" class="grid grid-cols-12 gap-2">
@@ -368,7 +428,7 @@ function formatDateVN(dateStr: string) {
         </label>
         <div class="flex flex-wrap gap-1.5">
           <button 
-            v-for="sv in SERVICE_CATALOG" 
+            v-for="sv in servicesList" 
             :key="sv.code" 
             type="button"
             @click="changeService(sv.code)"
@@ -596,7 +656,7 @@ function formatDateVN(dateStr: string) {
     </div>
 
     <!-- FOOTER: Chỉ chủ/người tạo mới có nút Lưu và Xoá -->
-    <div class="p-4 border-t border-slate-100 bg-white flex items-center justify-between">
+    <div class="p-4 border-t border-slate-100 bg-white flex items-center justify-between shrink-0 shadow-lg">
       <template v-if="canEdit">
         <button 
           v-if="jobsStore.drawerMode === 'edit'" 

@@ -36,12 +36,14 @@ Comprehensive architectural reference, development guidelines, and operational i
 │   │   ├── AuthController.cs     # PIN login, Avatar picker, Current user
 │   │   ├── JobsController.cs     # Strict visibility, financial masking & ownership
 │   │   ├── AvailabilityController.cs # Blind availability engine (Rule C)
-│   │   └── ProfileController.cs  # Services, office hours, custom off-days
+│   │   ├── ProfileController.cs  # Services, office hours, custom off-days
+│   │   ├── ServicesController.cs # Dynamic service catalog management
+│   │   └── AdminController.cs    # User CRUD, reset PIN & permissions
 │   ├── Data/
 │   │   ├── AppDbContext.cs       # EF Core mappings, precisions, relations
 │   │   └── DbInitializer.cs      # Seed data: 8 members & October 2026 jobs
 │   ├── DTOs/                     # Strongly-typed Request/Response DTOs
-│   ├── Models/                   # User, EventJob, JobAssignment, UserBusyDate
+│   ├── Models/                   # User, ServiceType, EventJob, JobAssignment, UserBusyDate
 │   ├── Services/                 # JwtService
 │   ├── Program.cs                # Dependency injection, JWT, CORS, Swagger
 │   └── appsettings.json          # SQL Server connection string & JWT key
@@ -49,9 +51,11 @@ Comprehensive architectural reference, development guidelines, and operational i
     ├── src/
     │   ├── components/
     │   │   ├── MapView.vue       # 100% Leaflet Map, custom pill markers, Overpass POI
-    │   │   ├── FloatingHeader.vue# Photon search, Date filter, Excel export, Profile
+    │   │   ├── FloatingHeader.vue# Photon search, Date filter, View switcher, Excel, Profile
     │   │   ├── JobSideDrawer.vue # Adaptive drawer with role-based editing & view
-    │   │   ├── ProfileModal.vue  # Skill toggles, fixed office hours, off-days
+    │   │   ├── ProfileModal.vue  # Skill toggles, fixed office hours, link to calendar
+    │   │   ├── CalendarView.vue  # Google Calendar style monthly schedule & busy dates
+    │   │   ├── AdminModal.vue    # Admin panel for user management & service types
     │   │   └── PinLoginModal.vue # Avatar selector + 4-digit numeric keypad
     │   ├── stores/               # Pinia stores (auth.ts, jobs.ts)
     │   ├── services/             # api.ts (fetch wrapper with JWT)
@@ -70,25 +74,35 @@ Comprehensive architectural reference, development guidelines, and operational i
    - `PinHash` (nvarchar(255) - BCrypt hashed 4-digit PIN)
    - `AvatarUrl` (nvarchar(500))
    - `ServicesJson` (nvarchar(1000) - `["BUTTERFLY", "FPV", "FLYCAM", "CAMERA", "PHOTO"]`)
+   - `IsAdmin` (bit - admin privilege to manage users and services)
    - `OfficeBusyEnabled` (bit)
    - `OfficeBusyStart` (time, default `08:00`)
    - `OfficeBusyEnd` (time, default `17:30`)
 
-2. **`UserBusyDates`**:
+2. **`ServiceTypes`**:
+   - `Id` (int PK)
+   - `Code` (nvarchar(50) UNIQUE - e.g. `BUTTERFLY`, `FPV`, `FLYCAM`, `CAMERA`, `PHOTO`, `DRONE_LIGHT`)
+   - `Name` (nvarchar(100) - e.g. `Bướm`, `Flycam`, `Trình diễn drone`)
+   - `Icon` (nvarchar(50) - emoji/icon `🦋`, `🚁`, `✨`)
+   - `Description` (nvarchar(255), nullable)
+   - `IsActive` (bit - soft activation status)
+   - `DisplayOrder` (int)
+
+3. **`UserBusyDates`**:
    - `Id` (int PK)
    - `UserId` (int FK -> Users, cascade delete)
    - `BusyDate` (date)
-   - `StartTime`, `EndTime` (time, nullable)
+   - `StartTime`, `EndTime` (time, nullable - support specific hour ranges or full day)
    - `Reason` (nvarchar(255))
 
-3. **`EventJobs`**:
+4. **`EventJobs`**:
    - `Id` (int PK)
    - `CreatedByUserId` (int FK -> Users, restrict delete)
    - `OwnerUserId` (int? FK -> Users, nullable for external clients)
    - `ExternalClientName` (nvarchar, nullable)
    - `EventDate` (date)
    - `StartTime`, `EndTime` (time)
-   - `ServiceCode` (nvarchar(50) - `BUTTERFLY`, `FPV`, `FLYCAM`, `CAMERA`, `PHOTO`)
+   - `ServiceCode` (nvarchar(50) - dynamic service code)
    - `LocationName` (nvarchar(255) - Serves as primary Job Title)
    - `SubAddress` (nvarchar(500))
    - `Latitude`, `Longitude` (`decimal(9,6)`)
@@ -96,7 +110,7 @@ Comprehensive architectural reference, development guidelines, and operational i
    - `ExternalWorkersNote` (nvarchar(500) - external freelancers)
    - `Note` (nvarchar(1000))
 
-4. **`JobAssignments`**:
+5. **`JobAssignments`**:
    - `Id` (int PK)
    - `JobId` (int FK -> EventJobs, cascade delete)
    - `UserId` (int FK -> Users, restrict delete)

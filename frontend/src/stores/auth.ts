@@ -1,17 +1,27 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { UserPickerDto, UserProfileDto } from '../types';
-import { authApi, profileApi } from '../services/api';
+import type { UserPickerDto, UserProfileDto, ServiceTypeDto } from '../types';
+import { authApi, profileApi, servicesApi } from '../services/api';
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('token'));
   const storedUser = localStorage.getItem('currentUser');
   const currentUser = ref<UserProfileDto | null>(storedUser ? JSON.parse(storedUser) : null);
   const teamMembers = ref<UserPickerDto[]>([]);
+  const services = ref<ServiceTypeDto[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
   const isAuthenticated = computed(() => !!token.value && !!currentUser.value);
+  const isAdmin = computed(() => !!currentUser.value?.isAdmin);
+
+  async function fetchServices() {
+    try {
+      services.value = await servicesApi.getServices();
+    } catch (err: any) {
+      console.error('Failed to load services', err);
+    }
+  }
 
   async function fetchTeamMembers() {
     try {
@@ -21,15 +31,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(userId: number, pin: string) {
+  async function login(nameOrId: string | number, pin: string) {
     loading.value = true;
     error.value = null;
     try {
-      const res = await authApi.login(userId, pin);
+      const payload = typeof nameOrId === 'number'
+        ? { userId: nameOrId, pin }
+        : { userName: nameOrId, pin };
+      const res = await authApi.login(payload);
       token.value = res.token;
       currentUser.value = res.user;
       localStorage.setItem('token', res.token);
       localStorage.setItem('currentUser', JSON.stringify(res.user));
+      await fetchServices();
+      await fetchTeamMembers();
       return true;
     } catch (err: any) {
       error.value = err.message || 'Đăng nhập không thành công';
@@ -52,13 +67,19 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function updateProfile(data: {
     services: string[];
-    officeBusyEnabled: boolean;
-    officeBusyStart: string;
-    officeBusyEnd: string;
+    officeBusyEnabled?: boolean;
+    officeBusyStart?: string;
+    officeBusyEnd?: string;
   }) {
     loading.value = true;
     try {
-      const updated = await profileApi.updateProfile(data);
+      const payload = {
+        services: data.services,
+        officeBusyEnabled: data.officeBusyEnabled ?? currentUser.value?.officeBusyEnabled ?? false,
+        officeBusyStart: data.officeBusyStart ?? currentUser.value?.officeBusyStart ?? '08:00',
+        officeBusyEnd: data.officeBusyEnd ?? currentUser.value?.officeBusyEnd ?? '17:30',
+      };
+      const updated = await profileApi.updateProfile(payload);
       currentUser.value = updated;
       localStorage.setItem('currentUser', JSON.stringify(updated));
       return true;
@@ -70,15 +91,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function addBusyDate(date: string, reason?: string) {
+  async function addBusyDate(date: string, reason?: string, startTime?: string, endTime?: string) {
     try {
-      const item = await profileApi.addBusyDate(date, reason);
+      const item = await profileApi.addBusyDate(date, reason, startTime, endTime);
       if (currentUser.value) {
         currentUser.value.customBusyDates.push(item);
         localStorage.setItem('currentUser', JSON.stringify(currentUser.value));
       }
+      return item;
     } catch (err: any) {
       error.value = err.message;
+      throw err;
     }
   }
 
@@ -91,6 +114,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
     } catch (err: any) {
       error.value = err.message;
+      throw err;
     }
   }
 
@@ -105,9 +129,12 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     currentUser,
     teamMembers,
+    services,
     loading,
     error,
     isAuthenticated,
+    isAdmin,
+    fetchServices,
     fetchTeamMembers,
     login,
     fetchCurrentUser,

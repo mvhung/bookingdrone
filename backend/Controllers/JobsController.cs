@@ -150,6 +150,7 @@ public class JobsController : ControllerBase
 
         _context.EventJobs.Add(job);
         await _context.SaveChangesAsync();
+        await SyncSavedVenueAsync(job.LocationName, job.SubAddress, job.Latitude, job.Longitude);
 
         // Reload with navigations
         var created = await _context.EventJobs
@@ -240,6 +241,7 @@ public class JobsController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await SyncSavedVenueAsync(job.LocationName, job.SubAddress, job.Latitude, job.Longitude);
 
         var updated = await _context.EventJobs
             .Include(j => j.CreatedByUser)
@@ -249,6 +251,49 @@ public class JobsController : ControllerBase
             .FirstAsync(j => j.Id == job.Id);
 
         return Ok(MapToDto(updated, currentUserId));
+    }
+
+    private async Task SyncSavedVenueAsync(string? locationName, string? subAddress, decimal lat, decimal lng)
+    {
+        if (string.IsNullOrWhiteSpace(locationName)) return;
+        var trimmed = locationName.Trim();
+        var minLat = lat - 0.0008m;
+        var maxLat = lat + 0.0008m;
+        var minLng = lng - 0.0008m;
+        var maxLng = lng + 0.0008m;
+
+        var existing = await _context.SavedVenues.FirstOrDefaultAsync(v => 
+            v.Name.ToLower() == trimmed.ToLower() ||
+            (v.Latitude >= minLat && v.Latitude <= maxLat && v.Longitude >= minLng && v.Longitude <= maxLng));
+
+        if (existing != null)
+        {
+            if (string.IsNullOrWhiteSpace(existing.SubAddress) && !string.IsNullOrWhiteSpace(subAddress))
+            {
+                existing.SubAddress = subAddress.Trim();
+            }
+        }
+        else
+        {
+            existing = new SavedVenue
+            {
+                Name = trimmed,
+                SubAddress = subAddress?.Trim() ?? string.Empty,
+                Latitude = lat,
+                Longitude = lng,
+                UsageCount = 1,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.SavedVenues.Add(existing);
+        }
+        await _context.SaveChangesAsync();
+
+        // Calculate accurate real job count
+        existing.UsageCount = await _context.EventJobs.CountAsync(j =>
+            j.LocationName.ToLower() == existing.Name.ToLower() ||
+            (j.Latitude >= minLat && j.Latitude <= maxLat && j.Longitude >= minLng && j.Longitude <= maxLng));
+
+        await _context.SaveChangesAsync();
     }
 
     [HttpDelete("{id}")]
@@ -263,16 +308,38 @@ public class JobsController : ControllerBase
 
         if (job == null) return NotFound();
 
-        bool isOwner = job.OwnerUserId == currentUserId;
-        bool isCreator = job.CreatedByUserId == currentUserId;
+        bool canDelete = job.OwnerUserId == currentUserId || job.CreatedByUserId == currentUserId;
 
-        if (!isOwner && !isCreator)
+        if (!canDelete)
         {
             return Forbid();
         }
 
+        var jobLat = job.Latitude;
+        var jobLng = job.Longitude;
+        var jobLocation = job.LocationName;
+
         _context.EventJobs.Remove(job);
         await _context.SaveChangesAsync();
+
+        // Sync venue usage count
+        var minLat = jobLat - 0.0008m;
+        var maxLat = jobLat + 0.0008m;
+        var minLng = jobLng - 0.0008m;
+        var maxLng = jobLng + 0.0008m;
+
+        var venue = await _context.SavedVenues.FirstOrDefaultAsync(v =>
+            v.Name.ToLower() == jobLocation.ToLower() ||
+            (v.Latitude >= minLat && v.Latitude <= maxLat && v.Longitude >= minLng && v.Longitude <= maxLng));
+
+        if (venue != null)
+        {
+            venue.UsageCount = await _context.EventJobs.CountAsync(j =>
+                j.LocationName.ToLower() == venue.Name.ToLower() ||
+                (j.Latitude >= minLat && j.Latitude <= maxLat && j.Longitude >= minLng && j.Longitude <= maxLng));
+            await _context.SaveChangesAsync();
+        }
+
         return NoContent();
     }
 

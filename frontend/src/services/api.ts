@@ -4,7 +4,14 @@ import type {
   JobResponseDto,
   SaveJobRequest,
   AvailabilityItemDto,
-  BusyDateItemDto
+  BusyDateItemDto,
+  ServiceTypeDto,
+  SaveServiceTypeRequest,
+  AdminUserDto,
+  CreateUserRequest,
+  UpdateUserAdminRequest,
+  SavedVenueDto,
+  SaveVenueRequest
 } from '../types';
 
 const API_BASE = '/api';
@@ -53,14 +60,20 @@ export const authApi = {
   getUsers(): Promise<UserPickerDto[]> {
     return request<UserPickerDto[]>('/auth/users');
   },
-  login(userId: number, pin: string): Promise<{ token: string; user: UserProfileDto }> {
+  login(credentials: { userId?: number; userName?: string; pin: string }): Promise<{ token: string; user: UserProfileDto }> {
     return request<{ token: string; user: UserProfileDto }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ userId, pin })
+      body: JSON.stringify(credentials)
     });
   },
   getMe(): Promise<UserProfileDto> {
     return request<UserProfileDto>('/auth/me');
+  },
+  changePin(payload: { oldPin?: string; newPin: string }): Promise<{ message: string }> {
+    return request<{ message: string }>('/auth/change-pin', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   }
 };
 
@@ -130,14 +143,89 @@ export const profileApi = {
       body: JSON.stringify(data)
     });
   },
-  addBusyDate(date: string, reason?: string): Promise<BusyDateItemDto> {
+  addBusyDate(date: string, reason?: string, startTime?: string, endTime?: string): Promise<BusyDateItemDto> {
     return request<BusyDateItemDto>('/profile/busy-dates', {
       method: 'POST',
-      body: JSON.stringify({ date, reason })
+      body: JSON.stringify({ date, reason, startTime, endTime })
     });
   },
   removeBusyDate(id: number): Promise<void> {
     return request<void>(`/profile/busy-dates/${id}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
+export const servicesApi = {
+  getServices(includeInactive = false): Promise<ServiceTypeDto[]> {
+    return request<ServiceTypeDto[]>(`/services?includeInactive=${includeInactive}`);
+  },
+  createService(payload: SaveServiceTypeRequest): Promise<ServiceTypeDto> {
+    return request<ServiceTypeDto>('/services', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  updateService(id: number, payload: SaveServiceTypeRequest): Promise<ServiceTypeDto> {
+    return request<ServiceTypeDto>(`/services/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+  deleteService(id: number): Promise<{ message?: string } | void> {
+    return request<{ message?: string } | void>(`/services/${id}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
+export const adminApi = {
+  getUsers(): Promise<AdminUserDto[]> {
+    return request<AdminUserDto[]>('/admin/users');
+  },
+  createUser(payload: CreateUserRequest): Promise<AdminUserDto> {
+    return request<AdminUserDto>('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  updateUser(id: number, payload: UpdateUserAdminRequest): Promise<AdminUserDto> {
+    return request<AdminUserDto>(`/admin/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+  resetPin(id: number, newPin: string): Promise<{ message: string }> {
+    return request<{ message: string }>(`/admin/users/${id}/reset-pin`, {
+      method: 'PUT',
+      body: JSON.stringify({ newPin })
+    });
+  },
+  deleteUser(id: number): Promise<void> {
+    return request<void>(`/admin/users/${id}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
+export const venuesApi = {
+  getVenues(): Promise<SavedVenueDto[]> {
+    return request<SavedVenueDto[]>('/venues');
+  },
+  createVenue(payload: SaveVenueRequest): Promise<SavedVenueDto> {
+    return request<SavedVenueDto>('/venues', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  updateVenue(id: number, payload: SaveVenueRequest): Promise<SavedVenueDto> {
+    return request<SavedVenueDto>(`/venues/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+  deleteVenue(id: number): Promise<void> {
+    return request<void>(`/venues/${id}`, {
       method: 'DELETE'
     });
   }

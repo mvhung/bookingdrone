@@ -12,6 +12,9 @@ public class User
     // JSON serialized array of service codes, e.g. ["BUTTERFLY", "FPV", "FLYCAM"]
     public string ServicesJson { get; set; } = "[]";
 
+    // Admin flag for managing users and service types
+    public bool IsAdmin { get; set; } = false;
+
     // Fixed office job settings (e.g. Mon-Fri)
     public bool OfficeBusyEnabled { get; set; } = false;
     public TimeOnly OfficeBusyStart { get; set; } = new(8, 0);

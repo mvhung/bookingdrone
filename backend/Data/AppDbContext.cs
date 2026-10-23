@@ -13,6 +13,8 @@ public class AppDbContext : DbContext
     public DbSet<UserBusyDate> UserBusyDates => Set<UserBusyDate>();
     public DbSet<EventJob> EventJobs => Set<EventJob>();
     public DbSet<JobAssignment> JobAssignments => Set<JobAssignment>();
+    public DbSet<ServiceType> ServiceTypes => Set<ServiceType>();
+    public DbSet<SavedVenue> SavedVenues => Set<SavedVenue>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -80,6 +82,27 @@ public class AppDbContext : DbContext
                   .WithMany(u => u.Assignments)
                   .HasForeignKey(a => a.UserId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ServiceType
+        modelBuilder.Entity<ServiceType>(entity =>
+        {
+            entity.HasKey(s => s.Id);
+            entity.HasIndex(s => s.Code).IsUnique();
+            entity.Property(s => s.Code).IsRequired().HasMaxLength(50);
+            entity.Property(s => s.Name).IsRequired().HasMaxLength(100);
+            entity.Property(s => s.Icon).HasMaxLength(50);
+            entity.Property(s => s.Description).HasMaxLength(255);
+        });
+
+        // SavedVenue
+        modelBuilder.Entity<SavedVenue>(entity =>
+        {
+            entity.HasKey(v => v.Id);
+            entity.Property(v => v.Name).IsRequired().HasMaxLength(255);
+            entity.Property(v => v.SubAddress).HasMaxLength(500);
+            entity.Property(v => v.Latitude).HasPrecision(9, 6);
+            entity.Property(v => v.Longitude).HasPrecision(9, 6);
         });
     }
 }

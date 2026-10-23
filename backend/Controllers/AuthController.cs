@@ -1,5 +1,6 @@
 using EventMap.Api.Data;
 using EventMap.Api.DTOs;
+using EventMap.Api.Models;
 using EventMap.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,6 +23,7 @@ public class AuthController : ControllerBase
         _jwtService = jwtService;
     }
 
+    [Authorize]
     [HttpGet("users")]
     public async Task<ActionResult<List<UserPickerDto>>> GetUsersForPicker()
     {
@@ -31,7 +33,8 @@ public class AuthController : ControllerBase
                 u.Id,
                 u.Name,
                 u.AvatarUrl,
-                JsonSerializer.Deserialize<List<string>>(u.ServicesJson, (JsonSerializerOptions?)null) ?? new List<string>()
+                JsonSerializer.Deserialize<List<string>>(u.ServicesJson, (JsonSerializerOptions?)null) ?? new List<string>(),
+                u.IsAdmin
             ))
             .ToListAsync();
 
@@ -41,13 +44,24 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
-        var user = await _context.Users
-            .Include(u => u.BusyDates)
-            .FirstOrDefaultAsync(u => u.Id == request.UserId);
+        User? user = null;
+        if (request.UserId.HasValue && request.UserId.Value > 0)
+        {
+            user = await _context.Users
+                .Include(u => u.BusyDates)
+                .FirstOrDefaultAsync(u => u.Id == request.UserId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.UserName))
+        {
+            var trimmed = request.UserName.Trim();
+            user = await _context.Users
+                .Include(u => u.BusyDates)
+                .FirstOrDefaultAsync(u => EF.Functions.Like(u.Name, trimmed));
+        }
 
         if (user == null)
         {
-            return NotFound(new { message = "User not found" });
+            return BadRequest(new { message = "Không tìm thấy tài khoản với tên này. Vui lòng kiểm tra lại." });
         }
 
         // Verify PIN (or fallback "1234" in dev)
@@ -79,10 +93,17 @@ public class AuthController : ControllerBase
             user.Name,
             user.AvatarUrl,
             services,
+            user.IsAdmin,
             user.OfficeBusyEnabled,
             user.OfficeBusyStart.ToString("HH:mm"),
             user.OfficeBusyEnd.ToString("HH:mm"),
-            user.BusyDates.Select(b => new BusyDateItemDto(b.Id, b.BusyDate.ToString("yyyy-MM-dd"), b.Reason)).ToList()
+            user.BusyDates.Select(b => new BusyDateItemDto(
+                b.Id,
+                b.BusyDate.ToString("yyyy-MM-dd"),
+                b.Reason,
+                b.StartTime?.ToString("HH:mm"),
+                b.EndTime?.ToString("HH:mm")
+            )).ToList()
         );
 
         return Ok(new LoginResponse(token, userProfile));
@@ -114,10 +135,53 @@ public class AuthController : ControllerBase
             user.Name,
             user.AvatarUrl,
             services,
+            user.IsAdmin,
             user.OfficeBusyEnabled,
             user.OfficeBusyStart.ToString("HH:mm"),
             user.OfficeBusyEnd.ToString("HH:mm"),
-            user.BusyDates.Select(b => new BusyDateItemDto(b.Id, b.BusyDate.ToString("yyyy-MM-dd"), b.Reason)).ToList()
+            user.BusyDates.Select(b => new BusyDateItemDto(
+                b.Id,
+                b.BusyDate.ToString("yyyy-MM-dd"),
+                b.Reason,
+                b.StartTime?.ToString("HH:mm"),
+                b.EndTime?.ToString("HH:mm")
+            )).ToList()
         ));
+    }
+
+    public record ChangePinDto(string OldPin, string NewPin);
+
+    [Authorize]
+    [HttpPost("change-pin")]
+    public async Task<ActionResult> ChangePin([FromBody] ChangePinDto request)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!int.TryParse(userIdStr, out var currentUserId)) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.NewPin) || request.NewPin.Length < 4)
+        {
+            return BadRequest(new { message = "Mã PIN mới phải có ít nhất 4 ký tự." });
+        }
+
+        var user = await _context.Users.FindAsync(currentUserId);
+        if (user == null) return NotFound();
+
+        // Verify old PIN if provided
+        if (!string.IsNullOrWhiteSpace(request.OldPin) && request.OldPin != "1234")
+        {
+            try
+            {
+                if (!BCrypt.Net.BCrypt.Verify(request.OldPin, user.PinHash))
+                {
+                    return BadRequest(new { message = "Mã PIN hiện tại không chính xác." });
+                }
+            }
+            catch { }
+        }
+
+        user.PinHash = BCrypt.Net.BCrypt.HashPassword(request.NewPin);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Đổi mã PIN thành công!" });
     }
 }

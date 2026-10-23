@@ -25,7 +25,8 @@ public class JwtService
         {
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Name, user.Name),
-            new("avatar", user.AvatarUrl ?? "")
+            new("avatar", user.AvatarUrl ?? ""),
+            new("isAdmin", user.IsAdmin.ToString().ToLowerInvariant())
         };
 
         var token = new JwtSecurityToken(

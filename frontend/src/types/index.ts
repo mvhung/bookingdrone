@@ -3,12 +3,15 @@ export interface UserPickerDto {
   name: string;
   avatarUrl?: string;
   services: string[];
+  isAdmin: boolean;
 }
 
 export interface BusyDateItemDto {
   id: number;
   date: string;
   reason?: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface UserProfileDto {
@@ -16,10 +19,59 @@ export interface UserProfileDto {
   name: string;
   avatarUrl?: string;
   services: string[];
+  isAdmin: boolean;
   officeBusyEnabled: boolean;
   officeBusyStart: string;
   officeBusyEnd: string;
   customBusyDates: BusyDateItemDto[];
+}
+
+export interface ServiceTypeDto {
+  id: number;
+  code: string;
+  name: string;
+  icon: string;
+  description?: string;
+  isActive: boolean;
+  displayOrder: number;
+}
+
+export interface SaveServiceTypeRequest {
+  code: string;
+  name: string;
+  icon: string;
+  description?: string;
+  isActive: boolean;
+  displayOrder: number;
+}
+
+export interface AdminUserDto {
+  id: number;
+  name: string;
+  avatarUrl?: string;
+  services: string[];
+  isAdmin: boolean;
+  officeBusyEnabled: boolean;
+  officeBusyStart: string;
+  officeBusyEnd: string;
+}
+
+export interface CreateUserRequest {
+  name: string;
+  pin: string;
+  avatarUrl?: string;
+  services: string[];
+  isAdmin: boolean;
+}
+
+export interface UpdateUserAdminRequest {
+  name: string;
+  avatarUrl?: string;
+  services: string[];
+  isAdmin: boolean;
+  officeBusyEnabled: boolean;
+  officeBusyStart: string;
+  officeBusyEnd: string;
 }
 
 export interface JobAssignmentDto {
@@ -104,3 +156,19 @@ export const SERVICE_CATALOG: ServiceItem[] = [
   { code: 'CAMERA', name: 'Quay', icon: '🎥' },
   { code: 'PHOTO', name: 'Chụp', icon: '📸' }
 ];
+
+export interface SavedVenueDto {
+  id: number;
+  name: string;
+  subAddress?: string;
+  latitude: number;
+  longitude: number;
+  usageCount: number;
+}
+
+export interface SaveVenueRequest {
+  name: string;
+  subAddress?: string;
+  latitude: number;
+  longitude: number;
+}

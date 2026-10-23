@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import type { JobResponseDto, SaveJobRequest } from '../types';
 import { jobsApi } from '../services/api';
 import { useAuthStore } from './auth';
+import { useVenuesStore } from './venues';
 
 export const useJobsStore = defineStore('jobs', () => {
   const authStore = useAuthStore();
@@ -12,6 +13,7 @@ export const useJobsStore = defineStore('jobs', () => {
   const selectedMonth = ref('2026-10');
   const selectedDate = ref('2026-10-18');
   const viewAllMonth = ref(true);
+  const selectedService = ref<string>('ALL');
 
   // Side Drawer state
   const drawerOpen = ref(false);
@@ -25,15 +27,28 @@ export const useJobsStore = defineStore('jobs', () => {
     location: string;
     subAddress: string;
     nearbyPois: string[];
+    poiCoordinates?: Record<string, { lat: number; lng: number }>;
   } | null>(null);
 
   // Filtered jobs visible on map
   const visibleJobs = computed(() => {
+    const filterSvc = selectedService.value?.trim().toUpperCase();
     return jobs.value.filter(j => {
-      if (viewAllMonth.value) {
-        return j.eventDate.startsWith(selectedMonth.value);
+      // 1. Date filter
+      const matchesDate = viewAllMonth.value
+        ? j.eventDate.startsWith(selectedMonth.value)
+        : j.eventDate === selectedDate.value;
+      if (!matchesDate) return false;
+
+      // 2. Service category filter
+      if (filterSvc && filterSvc !== 'ALL') {
+        const jobSvc = j.serviceCode?.trim().toUpperCase();
+        if (jobSvc !== filterSvc) {
+          return false;
+        }
       }
-      return j.eventDate === selectedDate.value;
+
+      return true;
     });
   });
 
@@ -59,6 +74,8 @@ export const useJobsStore = defineStore('jobs', () => {
       const created = await jobsApi.createJob(payload);
       jobs.value.push(created);
       closeDrawer();
+      const venuesStore = useVenuesStore();
+      venuesStore.loadVenues();
       return created;
     } catch (err: any) {
       console.error('Failed to create job', err);
@@ -77,6 +94,8 @@ export const useJobsStore = defineStore('jobs', () => {
         jobs.value[idx] = updated;
       }
       closeDrawer();
+      const venuesStore = useVenuesStore();
+      venuesStore.loadVenues();
       return updated;
     } catch (err: any) {
       console.error('Failed to update job', err);
@@ -132,6 +151,7 @@ export const useJobsStore = defineStore('jobs', () => {
     selectedMonth,
     selectedDate,
     viewAllMonth,
+    selectedService,
     drawerOpen,
     drawerMode,
     activeJob,
